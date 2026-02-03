@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Report - WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>Scan Report</h1>
+        <div class="subtitle">{{ message }}</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="/" style="color:#38bdf8; text-decoration:none;">← Back</a>
+    </div>
+  </div>
+</body>
+</html>

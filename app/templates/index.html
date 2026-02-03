@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebVulnScan</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    
+<div class="card">
+  <h1>WebVulnScan</h1>
+  <div class="subtitle">
+    Simple web reconnaissance tool
+  </div>
+
+  <form action="/scan" method="POST">
+    <label>Target URL</label>
+    <input type="text" name="url" placeholder="https://example.com" required>
+    <button type="submit">Start Scan</button>
+  </form>
+
+  <div class="footer">
+    Educational use only
+  </div>
+</div>
+
+</body>
+</html>
