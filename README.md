@@ -1,9 +1,22 @@
-## 🚀 How to Run
+# WebVulnScan
+
+A Python web application for scanning web vulnerabilities.  
+
+---
+
+## Requirements
+
+- [Docker](https://www.docker.com/get-started) installed on your system
+
+---
+
+## Quick Start
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-sudo apt install nmap
-cd app
-python app.py
+# 1. Build the Docker image
+docker build -t webvulnscan .
+
+# 2. Run the container
+docker run --rm -p 5000:5000 webvulnscan
+# 3. Access the application
+# Open your browser and navigate to: http://localhost:5000

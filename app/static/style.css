@@ -1,4 +1,5 @@
-* { box-sizing: border-box; }
+
+*{ box-sizing:border-box; }
 
 :root{
   --bg1:#070b16;
@@ -9,6 +10,7 @@
   --muted:#9ca3af;
   --accent:#38bdf8;
   --accent2:#0ea5e9;
+  --success:#22c55e;
 }
 
 body{
@@ -16,9 +18,12 @@ body{
   min-height:100vh;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   color:var(--text);
-  background: radial-gradient(800px 400px at 20% 10%, rgba(56,189,248,.12), transparent 60%),
-              radial-gradient(900px 500px at 80% 30%, rgba(14,165,233,.10), transparent 65%),
-              linear-gradient(180deg, var(--bg1), var(--bg2));
+
+  background:
+  radial-gradient(800px 400px at 20% 10%, rgba(56,189,248,.12), transparent 60%),
+  radial-gradient(900px 500px at 80% 30%, rgba(14,165,233,.10), transparent 65%),
+  linear-gradient(180deg, var(--bg1), var(--bg2));
+
   display:flex;
   align-items:center;
   justify-content:center;
@@ -26,12 +31,12 @@ body{
 }
 
 .card{
-  width: min(520px, 100%);
+  width:min(520px,100%);
   background: rgba(11,18,36,.85);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 28px;
-  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:28px;
+  box-shadow:0 18px 60px rgba(0,0,0,.55);
   backdrop-filter: blur(10px);
 }
 
@@ -39,76 +44,114 @@ body{
   display:flex;
   align-items:center;
   gap:12px;
-  margin-bottom: 14px;
+  margin-bottom:16px;
 }
 
 .logo{
   width:42px;
   height:42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(56,189,248,.9), rgba(14,165,233,.9));
-  box-shadow: 0 10px 25px rgba(56,189,248,.18);
+  border-radius:12px;
+
+  background: linear-gradient(
+    135deg,
+    rgba(56,189,248,.9),
+    rgba(14,165,233,.9)
+  );
+
+  box-shadow:0 10px 25px rgba(56,189,248,.18);
 }
 
 h1{
   margin:0;
-  font-size: 26px;
-  letter-spacing: .3px;
+  font-size:26px;
 }
 
 .subtitle{
-  margin: 6px 0 20px 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.4;
+  margin-top:4px;
+  color:var(--muted);
+  font-size:14px;
 }
 
 label{
   display:block;
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 8px;
+  font-size:13px;
+  color:var(--muted);
+  margin-bottom:8px;
 }
 
-input[type="text"]{
-  flex:1;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
+input{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid var(--line);
   background: rgba(255,255,255,.04);
-  color: var(--text);
+  color:var(--text);
   outline:none;
 }
 
-input[type="text"]::placeholder{
-  color: rgba(156,163,175,.65);
+input::placeholder{
+  color:rgba(156,163,175,.65);
 }
 
-input[type="text"]:focus{
-  border-color: rgba(56,189,248,.55);
-  box-shadow: 0 0 0 4px rgba(56,189,248,.12);
+input:focus{
+  border-color:rgba(56,189,248,.55);
+  box-shadow:0 0 0 4px rgba(56,189,248,.12);
 }
 
 button{
-  width: 100%;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  width:100%;
+  margin-top:14px;
+  padding:12px;
+  border:none;
+  border-radius:12px;
+
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    var(--accent2)
+  );
+
   color:#041018;
-  font-weight: 700;
+  font-weight:700;
   cursor:pointer;
-  transition: transform .08s ease, filter .08s ease;
 }
 
-button:hover{ filter: brightness(1.05); }
-button:active{ transform: translateY(1px); }
+button:hover{
+  filter:brightness(1.05);
+}
+
+.results{
+  margin-top:18px;
+}
+
+.result-item{
+  display:flex;
+  justify-content:space-between;
+  padding:10px 0;
+  border-bottom:1px solid var(--line);
+}
+
+.port{
+  font-weight:600;
+}
+
+.service{
+  color:var(--muted);
+}
+
+.status{
+  color:var(--success);
+  font-weight:600;
+}
 
 .footer{
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-  color: rgba(156,163,175,.75);
-  font-size: 12px;
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid var(--line);
+  font-size:12px;
+}
+
+.footer a{
+  color:var(--accent);
+  text-decoration:none;
 }
