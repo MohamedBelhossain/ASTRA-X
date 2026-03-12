@@ -1,5 +1,14 @@
 __pycache__
 *.pyc
 *.pyo
-venv/
+*.pyd
+.Python
+venv
+env
 .env
+.git
+.gitignore
+README.md
+.DS_Store
+.vscode
+.idea

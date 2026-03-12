@@ -2,6 +2,8 @@ import nmap
 import socket
 from urllib.parse import urlparse
 
+COMMON_PORTS = "21,22,25,53,80,110,143,443,3306,5432,6379,8080,8443"
+
 
 def run_nmap(target_url):
     try:
@@ -10,7 +12,7 @@ def run_nmap(target_url):
         ip = socket.gethostbyname(hostname)
 
         nm = nmap.PortScanner()
-        nm.scan(ip, arguments='-F')
+        nm.scan(ip, COMMON_PORTS)
 
         open_ports = []
         for host in nm.all_hosts():

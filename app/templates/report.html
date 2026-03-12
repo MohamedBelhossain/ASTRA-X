@@ -1,63 +1,75 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Report</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
 
-<head>
-<meta charset="utf-8">
-<title>Scan Report - WebVulnScan</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+    <div class="report-container">
+      <h2>Scan Report</h2>
 
-<body>
-
-<div class="card">
-
-  <div class="brand">
-    <div class="logo"></div>
-    <div>
-      <h1>Scan Report</h1>
-      <div class="subtitle">
-        Target: {{ target }}
+      <div class="section">
+        <h3>Target:</h3>
+        <p>{{ target_url }}</p>
       </div>
+
+      <div class="section">
+        <h3>Open Ports</h3>
+        {% if open_ports %}
+          <table>
+            <thead>
+              <tr><th>Port</th><th>Protocol</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for port in open_ports %}
+                <tr>
+                  <td>{{ port.port }}</td>
+                  <td>{{ port.protocol }}</td>
+                  <td class="port-status-{{ port.status }}">{{ port.status }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p>No open ports found.</p>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <h3>Pages Scanned</h3>
+        <p>{{ pages_scanned }} pages discovered.</p>
+      </div>
+
+      <div class="section">
+        <h3>SQL Injection Results</h3>
+        {% if vulnerabilities %}
+          {% for vuln in vulnerabilities %}
+            <div class="vuln-card">
+              <p><strong>Page:</strong> {{ vuln.url }}</p>
+              <p><strong>Type:</strong> {{ vuln.type }}</p>
+              <p><strong>Parameter:</strong> {{ vuln.parameter }}</p>
+              <p><strong>Payload:</strong> {{ vuln.payload }}</p>
+              {% if vuln.matched_error %}
+                <p><strong>Matched Error:</strong> {{ vuln.matched_error }}</p>
+              {% endif %}
+              {% if vuln.true_false_diff %}
+                <p><strong>True/False Diff:</strong> {{ vuln.true_false_diff }}</p>
+              {% endif %}
+              {% if vuln.delay_seconds %}
+                <p><strong>Delay:</strong> {{ vuln.delay_seconds }}s</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p>No SQLi vulnerabilities found.</p>
+        {% endif %}
+      </div>
+
+      <a href="/" class="back-link">← Back</a>
     </div>
-  </div>
 
-  <div class="results">
-
-    {% if results %}
-    
-      {% for i in results %}
-      
-      <div class="result-item">
-
-        <span class="port">
-          {{ i.port }}
-        </span>
-
-        <span class="service">
-          {{ i.service }}
-        </span>
-
-        <span class="status {{ i.status }}">
-          {{ i.status }}
-        </span>
-
-      </div>
-
-      {% endfor %}
-
-    {% else %}
-
-      <p>No open ports detected.</p>
-
-    {% endif %}
-
-  </div>
-
-  <div class="footer">
-    <a href="/">← Back</a>
-  </div>
-
-</div>
-
-</body>
+  </body>
 </html>

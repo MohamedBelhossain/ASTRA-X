@@ -11,3 +11,5 @@ python-nmap==0.7.1
 requests==2.32.5
 urllib3==2.6.3
 Werkzeug==3.1.5
+beautifulsoup4==4.12.3
+lxml==5.2.1
