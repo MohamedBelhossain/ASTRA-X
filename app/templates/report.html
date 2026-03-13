@@ -106,7 +106,9 @@
           </div>
         {% endif %}
       </div>
-
+      {% if not pdf_mode %}
+           <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
+      {% endif %}
       <a href="/" class="back-link">← Back</a>
     </div>
 

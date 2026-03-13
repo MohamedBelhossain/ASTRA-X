@@ -481,6 +481,22 @@ td {
   font-size: 14px;
 }
 
+.download-btn {
+  display: inline-block;
+  margin-top: 8px;
+  margin-right: 12px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #041018;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.download-btn:hover {
+  filter: brightness(1.05);
+}
 /* Back link */
 
 .back-link {
@@ -493,4 +509,105 @@ td {
 
 .back-link:hover {
   text-decoration: underline;
+}
+@media print {
+  body {
+    background: white !important;
+    color: #111 !important;
+    padding: 0 !important;
+  }
+
+  .report-container {
+    background: white !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    padding: 20px !important;
+    width: 100% !important;
+  }
+
+  .logo {
+    background: #0ea5e9 !important;
+    box-shadow: none !important;
+  }
+
+  h1, h2, h3 {
+    color: #0ea5e9 !important;
+  }
+
+  .subtitle, .muted, .vuln-key {
+    color: #555 !important;
+  }
+
+  .summary-badge {
+    background: #f5f5f5 !important;
+    border: 1px solid #ddd !important;
+  }
+
+  .summary-badge.badge-danger {
+    background: #fff0f0 !important;
+    border-color: #f44336 !important;
+  }
+
+  .summary-badge.badge-safe {
+    background: #f0fff4 !important;
+    border-color: #22c55e !important;
+  }
+
+  .summary-num {
+    color: #111 !important;
+  }
+
+  .section {
+    border-bottom: 1px solid #ddd !important;
+  }
+
+  th {
+    background: #f0f0f0 !important;
+    color: #333 !important;
+  }
+
+  td {
+    background: white !important;
+    color: #111 !important;
+  }
+
+  table, th, td {
+    border-color: #ccc !important;
+  }
+
+  .vuln-card {
+    background: #fafafa !important;
+    border: 1px solid #ddd !important;
+    break-inside: avoid;
+  }
+
+  .vuln-header {
+    background: #f5f5f5 !important;
+    border-bottom: 1px solid #ddd !important;
+  }
+
+  .vuln-type {
+    color: #111 !important;
+  }
+
+  .vuln-val {
+    color: #111 !important;
+  }
+
+  .vuln-code {
+    background: #f5f5f5 !important;
+    border-color: #ccc !important;
+    color: #0ea5e9 !important;
+  }
+
+  .no-vulns {
+    background: #f0fff4 !important;
+    border-color: #22c55e !important;
+  }
+
+  .download-btn,
+  .back-link {
+    display: none !important;
+  }
 }
