@@ -2,6 +2,8 @@ import requests
 import time
 from urllib.parse import urljoin
 from app.form_parser import get_forms
+from functools import lru_cache
+from requests.adapters import HTTPAdapter
 
 
 SQL_ERRORS = [
@@ -64,8 +66,14 @@ def _make_session():
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
     })
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
     return s
 
+@lru_cache(maxsize=200)
+def get_forms_cached(url):
+    return get_forms(url)
 
 session = _make_session()
 
@@ -118,7 +126,7 @@ def scan_sqli(url):
     found_params = set()   # avoid duplicate reports per (action, param, type)
 
     try:
-        forms = get_forms(url)
+        forms = get_forms_cached(url)
     except Exception as e:
         print(f"  [!] Could not retrieve forms: {e}")
         return vulnerabilities
@@ -229,7 +237,7 @@ def scan_sqli(url):
                 for payload in TIME_PAYLOADS:
                     data = _build_data(inputs, param, payload)
                     start = time.time()
-                    r = _send(method, action, data, timeout=15)
+                    r = _send(method, action, data, timeout=7)
                     delay = time.time() - start
 
                     if delay >= 4.5:

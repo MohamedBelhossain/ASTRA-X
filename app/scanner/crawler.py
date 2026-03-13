@@ -4,7 +4,7 @@ from urllib.parse import urljoin, urlparse
 
 session = requests.Session()
 
-visited_urls = set()
+
 
 
 def normalize(url):
@@ -48,7 +48,7 @@ def get_links(url):
 
 
 def crawl(target, max_pages=30):
-
+    visited_urls = set()
     to_visit = [target]
     discovered = set()
 
@@ -66,5 +66,6 @@ def crawl(target, max_pages=30):
             for link in links:
                 if link not in visited_urls:
                     to_visit.append(link)
-
-    return discovered
+    pages = list(discovered)
+    pages = [p for p in pages if not p.endswith(('.jpg', '.png', '.css', '.js', '.pdf', '.ico', '.svg'))]
+    return pages
