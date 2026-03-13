@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WebVulnScan</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
@@ -15,25 +15,25 @@
     <div class="logo"></div>
     <div>
       <h1>WebVulnScan</h1>
-      <div class="subtitle">
-        Scan a website for open ports
-      </div>
+      <div class="subtitle">Scan a website for open ports</div>
     </div>
   </div>
 
-  <form action="/scan" method="POST">
+  <form id="scan-form" action="/scan" method="POST">
 
     <label>Target URL</label>
 
-    <input 
+    <input
+      id="url-input"
       type="text"
       name="url"
       placeholder="https://example.com"
       required
     >
 
-    <button type="submit">
-      Start Scan
+    <button type="submit" id="scan-btn">
+      <span id="btn-text">Start Scan</span>
+      <span id="btn-spinner" class="btn-spinner hidden"></span>
     </button>
 
   </form>
@@ -43,6 +43,69 @@
   </div>
 
 </div>
+
+<!-- progress overlay -->
+<div id="progress-overlay" class="progress-overlay hidden">
+  <div class="progress-inner">
+    <div class="radar">
+      <div class="radar-ring ring1"></div>
+      <div class="radar-ring ring2"></div>
+      <div class="radar-ring ring3"></div>
+      <div class="radar-sweep"></div>
+      <div class="radar-dot"></div>
+    </div>
+    <p class="progress-title">Scanning target…</p>
+    <p id="progress-step" class="progress-step">Initialising</p>
+    <div class="progress-bar-track">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const steps = [
+    { label: "Running Nmap port scan…",     pct: 15 },
+    { label: "Crawling pages…",              pct: 35 },
+    { label: "Extracting forms…",            pct: 50 },
+    { label: "Injecting SQL payloads…",      pct: 65 },
+    { label: "Running boolean tests…",       pct: 78 },
+    { label: "Running time-based tests…",    pct: 88 },
+    { label: "Finalising report…",           pct: 96 },
+  ];
+
+  const form       = document.getElementById("scan-form");
+  const overlay    = document.getElementById("progress-overlay");
+  const stepEl     = document.getElementById("progress-step");
+  const barEl      = document.getElementById("progress-bar");
+  const btnText    = document.getElementById("btn-text");
+  const btnSpinner = document.getElementById("btn-spinner");
+  const urlInput   = document.getElementById("url-input");
+  const scanBtn    = document.getElementById("scan-btn");
+
+  function setProgress(pct, label) {
+    barEl.style.width = pct + "%";
+    stepEl.textContent = label;
+  }
+
+  form.addEventListener("submit", () => {
+    btnText.textContent = "Scanning…";
+    btnSpinner.classList.remove("hidden");
+    urlInput.readOnly = true;
+    scanBtn.disabled  = true;
+
+    overlay.classList.remove("hidden");
+    setProgress(5, "Connecting to target…");
+
+    let i = 0;
+    function nextStep() {
+      if (i >= steps.length) return;
+      const s = steps[i++];
+      setProgress(s.pct, s.label);
+      setTimeout(nextStep, 2500 + Math.random() * 2500);
+    }
+    setTimeout(nextStep, 800);
+  });
+</script>
 
 </body>
 </html>

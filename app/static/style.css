@@ -59,6 +59,7 @@ body {
   border-radius: 12px;
   background: linear-gradient(135deg, rgba(56, 189, 248, .9), rgba(14, 165, 233, .9));
   box-shadow: 0 10px 25px rgba(56, 189, 248, .18);
+  flex-shrink: 0;
 }
 
 h1 {
@@ -108,10 +109,19 @@ button {
   color: #041018;
   font-weight: 700;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 button:hover {
   filter: brightness(1.05);
+}
+
+button:disabled {
+  opacity: .7;
+  cursor: not-allowed;
 }
 
 .results {
@@ -125,29 +135,136 @@ button:hover {
   border-bottom: 1px solid var(--line);
 }
 
-.port {
-  font-weight: 600;
-}
-
-.service {
-  color: var(--muted);
-}
-
-.status {
-  color: var(--success);
-  font-weight: 600;
-}
+.port { font-weight: 600; }
+.service { color: var(--muted); }
+.status { color: var(--success); font-weight: 600; }
 
 .footer {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
   font-size: 12px;
+  color: var(--muted);
 }
 
 .footer a {
   color: var(--accent);
   text-decoration: none;
+}
+
+/* ── Spinner ──────────────────────────────────────────── */
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(4, 16, 24, .3);
+  border-top-color: #041018;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+
+.hidden { display: none !important; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Progress overlay ─────────────────────────────────── */
+
+.progress-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 11, 22, .82);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.progress-inner {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.radar {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, .25);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ring1 { width: 100px; height: 100px; }
+.ring2 { width: 66px;  height: 66px; }
+.ring3 { width: 33px;  height: 33px; }
+
+.radar-sweep {
+  position: absolute;
+  width: 50%;
+  height: 50%;
+  top: 0;
+  left: 50%;
+  transform-origin: bottom left;
+  background: conic-gradient(from 0deg, transparent 70%, rgba(56, 189, 248, .55) 100%);
+  border-radius: 100% 0 0 0;
+  animation: sweep 2s linear infinite;
+}
+
+@keyframes sweep {
+  to { transform: rotate(360deg); }
+}
+
+.radar-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.progress-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.progress-step {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 18px;
+}
+
+.progress-bar-track {
+  width: 260px;
+  height: 4px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 5%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 99px;
+  transition: width .6s ease;
 }
 
 /* ── Report page ──────────────────────────────────────── */
@@ -162,8 +279,7 @@ button:hover {
   backdrop-filter: blur(10px);
 }
 
-h2,
-h3 {
+h2, h3 {
   color: var(--accent);
 }
 
@@ -173,18 +289,52 @@ h3 {
   padding-bottom: 15px;
 }
 
-/* Vuln cards */
+/* Report header */
 
-.vuln-card {
-  background: rgba(255, 255, 255, .03);
-  margin: 10px 0;
-  padding: 10px 15px;
-  border-radius: 8px;
-  border-left: 4px solid var(--danger);
+.report-header {
+  margin-bottom: 28px;
 }
 
-.vuln-card p {
-  margin: 3px 0;
+/* Summary row */
+
+.summary-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.summary-badge {
+  flex: 1;
+  min-width: 100px;
+  background: rgba(255, 255, 255, .03);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-badge.badge-danger {
+  border-color: rgba(244, 67, 54, .4);
+  background: rgba(244, 67, 54, .07);
+}
+
+.summary-badge.badge-safe {
+  border-color: rgba(34, 197, 94, .4);
+  background: rgba(34, 197, 94, .07);
+}
+
+.summary-num {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 /* Table */
@@ -195,14 +345,11 @@ table {
   margin-top: 10px;
 }
 
-table,
-th,
-td {
+table, th, td {
   border: 1px solid var(--line);
 }
 
-th,
-td {
+th, td {
   padding: 8px;
   text-align: left;
 }
@@ -216,7 +363,7 @@ td {
   background: rgba(11, 18, 36, .6);
 }
 
-/* Port status colours  */
+/* Port status */
 
 .port-status-open {
   color: var(--success);
@@ -227,6 +374,111 @@ td {
 .port-status-filtered {
   color: var(--danger);
   font-weight: 600;
+}
+
+/* Vuln cards */
+
+.vuln-card {
+  background: rgba(255, 255, 255, .03);
+  margin: 10px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.vuln-critical { border-left: 4px solid #f44336; }
+.vuln-high     { border-left: 4px solid #ff9800; }
+.vuln-medium   { border-left: 4px solid #ffc107; }
+.vuln-low      { border-left: 4px solid #8bc34a; }
+
+.vuln-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, .02);
+}
+
+.vuln-type {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.severity-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 3px 10px;
+  border-radius: 99px;
+}
+
+.sev-critical { background: rgba(244,  67,  54, .2); color: #f44336; }
+.sev-high     { background: rgba(255, 152,   0, .2); color: #ff9800; }
+.sev-medium   { background: rgba(255, 193,   7, .2); color: #ffc107; }
+.sev-low      { background: rgba(139, 195,  74, .2); color: #8bc34a; }
+
+.vuln-body {
+  padding: 10px 14px;
+}
+
+.vuln-body p {
+  margin: 5px 0;
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  align-items: baseline;
+}
+
+.vuln-key {
+  color: var(--muted);
+  min-width: 110px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.vuln-val {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.vuln-code {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+/* No vulns state */
+
+.no-vulns {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, .07);
+  border: 1px solid rgba(34, 197, 94, .25);
+  color: var(--success);
+}
+
+.no-vulns-icon {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.no-vulns p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
 }
 
 /* Back link */
