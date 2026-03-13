@@ -611,3 +611,29 @@ td {
     display: none !important;
   }
 }
+/* ── Error box ────────────────────────────────────────── */
+
+.error-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 10px;
+  background: rgba(244, 67, 54, .07);
+  border: 1px solid rgba(244, 67, 54, .35);
+  margin-top: 16px;
+}
+
+.error-icon {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--danger);
+  flex-shrink: 0;
+}
+
+.error-box p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}

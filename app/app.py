@@ -2,6 +2,9 @@ from flask import Flask, render_template, request, make_response
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from weasyprint import HTML
 import uuid
+import socket
+import requests as req
+from urllib.parse import urlparse
 
 from app.scanner.analyser import analyse_nmap
 from app.scanner.nmap import run_nmap
@@ -10,7 +13,6 @@ from app.scanner.sqli_scanner import scan_sqli
 
 app = Flask(__name__)
 
-# temporary in-memory store for scan results
 scan_store = {}
 
 
@@ -21,31 +23,57 @@ def index():
 
 @app.route("/scan", methods=["POST"])
 def scan():
-    target = request.form["url"]
+
+    target = request.form.get("url", "").strip()
+
+    # ── 1. basic input check ────────────────────────────
+    if not target:
+        return render_template("error.html", message="No URL provided.")
+
     if not target.startswith("http://") and not target.startswith("https://"):
         target = "http://" + target
 
-    # run nmap and crawler in parallel
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        nmap_future = executor.submit(run_nmap, target)
-        crawl_future = executor.submit(crawl, target)
-        nmap_result = nmap_future.result()
-        pages = crawl_future.result()
+    # ── 2. DNS check ────────────────────────────────────
+    hostname = urlparse(target).hostname
+    try:
+        socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return render_template("error.html", message=f"Could not resolve hostname <strong>{hostname}</strong>. Check the URL and try again.")
 
-    analysed_result = analyse_nmap(nmap_result)
+    # ── 3. reachability check ───────────────────────────
+    try:
+        req.head(target, timeout=5, allow_redirects=True)
+    except req.exceptions.ConnectionError:
+        return render_template("error.html", message=f"Could not connect to <strong>{target}</strong>. Check the URL and try again.")
+    except req.exceptions.Timeout:
+        return render_template("error.html", message=f"Connection to <strong>{target}</strong> timed out.")
+    except req.exceptions.RequestException as e:
+        return render_template("error.html", message=f"Invalid or unreachable URL: {e}")
 
-    # scan all pages in parallel
-    sqli_vulnerabilities = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(scan_sqli, page): page for page in pages}
-        for future in as_completed(futures):
-            try:
-                results = future.result()
-                sqli_vulnerabilities.extend(results)
-            except Exception as e:
-                print(f"[!] Error scanning page: {e}")
+    # ── 4. run scan ─────────────────────────────────────
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            nmap_future = executor.submit(run_nmap, target)
+            crawl_future = executor.submit(crawl, target)
+            nmap_result = nmap_future.result()
+            pages = crawl_future.result()
 
-    # store results for PDF download
+        analysed_result = analyse_nmap(nmap_result)
+
+        sqli_vulnerabilities = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(scan_sqli, page): page for page in pages}
+            for future in as_completed(futures):
+                try:
+                    results = future.result()
+                    sqli_vulnerabilities.extend(results)
+                except Exception as e:
+                    print(f"[!] Error scanning page: {e}")
+
+    except Exception as e:
+        return render_template("error.html", message=f"Scan failed unexpectedly: {e}")
+
+    # ── 5. store and render ─────────────────────────────
     scan_id = str(uuid.uuid4())
     scan_store[scan_id] = {
         "target_url": target,
@@ -66,11 +94,11 @@ def scan():
 def download(scan_id):
     data = scan_store.get(scan_id)
     if not data:
-        return "Scan not found", 404
+        return render_template("error.html", message="Scan report not found or expired.")
 
     html_content = render_template("report.html",
                                    scan_id=scan_id,
-                                   pdf_mode=True,   # hides the download button in PDF
+                                   pdf_mode=True,
                                    **data)
 
     pdf = HTML(string=html_content, base_url=request.host_url).write_pdf()

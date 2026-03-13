@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="card">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>WebVulnScan</h1>
+        <p class="subtitle">Something went wrong</p>
+      </div>
+    </div>
+
+    <div class="error-box">
+      <span class="error-icon">✕</span>
+      <p>{{ message | safe }}</p>
+    </div>
+
+    <a href="/" class="back-link" style="display:inline-block; margin-top:16px;">← Try again</a>
+  </div>
+
+</body>
+</html>
