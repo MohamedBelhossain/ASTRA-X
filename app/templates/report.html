@@ -30,11 +30,16 @@
           </div>
           <div class="summary-badge {{ 'badge-danger' if vulnerabilities else 'badge-safe' }}">
             <span class="summary-num">{{ vulnerabilities | length }}</span>
-            <span class="summary-label">Vulnerabilities</span>
+            <span class="summary-label">SQLi Found</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if xss_vulnerabilities else 'badge-safe' }}">
+            <span class="summary-num">{{ xss_vulnerabilities | length }}</span>
+            <span class="summary-label">XSS Found</span>
           </div>
         </div>
       </div>
 
+      <!-- Open Ports -->
       <div class="section">
         <h3>Open Ports</h3>
         {% if open_ports %}
@@ -57,11 +62,13 @@
         {% endif %}
       </div>
 
+      <!-- Pages Scanned -->
       <div class="section">
         <h3>Pages Scanned</h3>
         <p>{{ pages_scanned }} pages discovered.</p>
       </div>
 
+      <!-- SQLi Results -->
       <div class="section">
         <h3>SQL Injection Results</h3>
         {% if vulnerabilities %}
@@ -106,10 +113,47 @@
           </div>
         {% endif %}
       </div>
+
+      <!-- XSS Results -->
+      <div class="section">
+        <h3>XSS Findings</h3>
+        {% if xss_vulnerabilities %}
+          {% for vuln in xss_vulnerabilities %}
+
+            {% if vuln.type == "stored" %}
+              {% set sev = "critical" %}
+            {% elif vuln.type == "reflected" %}
+              {% set sev = "high" %}
+            {% else %}
+              {% set sev = "medium" %}
+            {% endif %}
+
+            <div class="vuln-card vuln-{{ sev }}">
+              <div class="vuln-header">
+                <span class="vuln-type">{{ vuln.type | replace("-", " ") | title }} XSS</span>
+                <span class="severity-badge sev-{{ sev }}">{{ sev | upper }}</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
+                <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.parameter }}</span></p>
+                <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+              </div>
+            </div>
+
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns">
+            <span class="no-vulns-icon">✓</span>
+            <p>No XSS vulnerabilities found.</p>
+          </div>
+        {% endif %}
+      </div>
+
       {% if not pdf_mode %}
-           <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
+        <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
       {% endif %}
       <a href="/" class="back-link">← Back</a>
+
     </div>
 
   </body>

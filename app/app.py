@@ -10,6 +10,7 @@ from app.scanner.analyser import analyse_nmap
 from app.scanner.nmap import run_nmap
 from app.scanner.crawler import crawl
 from app.scanner.sqli_scanner import scan_sqli
+from app.scanner.xss_scanner import scan_xss
 
 app = Flask(__name__)
 
@@ -68,7 +69,17 @@ def scan():
                     results = future.result()
                     sqli_vulnerabilities.extend(results)
                 except Exception as e:
-                    print(f"[!] Error scanning page: {e}")
+                    print(f"[!] SQLi scan error: {e}")
+
+        xss_vulnerabilities = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(scan_xss, page): page for page in pages}
+            for future in as_completed(futures):
+                try:
+                    results = future.result()
+                    xss_vulnerabilities.extend(results)
+                except Exception as e:
+                    print(f"[!] XSS scan error: {e}")
 
     except Exception as e:
         return render_template("error.html", message=f"Scan failed unexpectedly: {e}")
@@ -80,6 +91,7 @@ def scan():
         "open_ports": analysed_result,
         "pages_scanned": len(pages),
         "vulnerabilities": sqli_vulnerabilities,
+        "xss_vulnerabilities": xss_vulnerabilities,
     }
 
     return render_template("report.html",
@@ -87,7 +99,8 @@ def scan():
                            target_url=target,
                            open_ports=analysed_result,
                            pages_scanned=len(pages),
-                           vulnerabilities=sqli_vulnerabilities)
+                           vulnerabilities=sqli_vulnerabilities,
+                           xss_vulnerabilities=xss_vulnerabilities)
 
 
 @app.route("/download/<scan_id>")
