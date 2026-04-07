@@ -7,6 +7,7 @@ import requests as req
 from urllib.parse import urlparse
 
 from app.scanner.analyser import analyse_nmap
+from app.scanner.file_exposure import scan_file_exposure
 from app.scanner.nmap import run_nmap
 from app.scanner.crawler import crawl
 from app.scanner.sqli_scanner import scan_sqli
@@ -85,6 +86,10 @@ def scan():
         return render_template("error.html", message=f"Scan failed unexpectedly: {e}")
 
     # ── 5. store and render ─────────────────────────────
+    print("BEFORE FILE SCAN")
+
+    file_findings = scan_file_exposure(target) or []
+    print("AFTER FILE SCAN")
     scan_id = str(uuid.uuid4())
     scan_store[scan_id] = {
         "target_url": target,
@@ -92,7 +97,12 @@ def scan():
         "pages_scanned": len(pages),
         "vulnerabilities": sqli_vulnerabilities,
         "xss_vulnerabilities": xss_vulnerabilities,
+        "file_findings": file_findings,
     }
+   
+   
+
+#
 
     return render_template("report.html",
                            scan_id=scan_id,
@@ -100,7 +110,8 @@ def scan():
                            open_ports=analysed_result,
                            pages_scanned=len(pages),
                            vulnerabilities=sqli_vulnerabilities,
-                           xss_vulnerabilities=xss_vulnerabilities)
+                           xss_vulnerabilities=xss_vulnerabilities,
+                           file_findings=file_findings)
 
 
 @app.route("/download/<scan_id>")

@@ -36,7 +36,12 @@
             <span class="summary-num">{{ xss_vulnerabilities | length }}</span>
             <span class="summary-label">XSS Found</span>
           </div>
+           <div class="summary-badge {{ 'badge-danger' if file_findings else 'badge-safe' }}">
+  <span class="summary-num">{{ file_findings | length }}</span>
+  <span class="summary-label">Exposed Files</span>
+</div>
         </div>
+       
       </div>
 
       <!-- Open Ports -->
@@ -148,6 +153,32 @@
           </div>
         {% endif %}
       </div>
+      <!-- File Exposure Results -->
+<div class="section">
+  <h3>Sensitive File Exposure</h3>
+  {% if file_findings %}
+    <table>
+      <thead>
+        <tr><th>URL</th><th>Status</th><th>Size</th><th>Severity</th></tr>
+      </thead>
+      <tbody>
+        {% for f in file_findings %}
+          <tr>
+            <td><a href="{{ f.url }}" target="_blank" style="color:var(--accent)">{{ f.url }}</a></td>
+            <td>{{ f.status }}</td>
+            <td>{{ f.size }} bytes</td>
+            <td class="sev-{{ f.severity }}">{{ f.severity | upper }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="no-vulns">
+      <span class="no-vulns-icon">✓</span>
+      <p>No sensitive files exposed.</p>
+    </div>
+  {% endif %}
+</div>
 
       {% if not pdf_mode %}
         <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
