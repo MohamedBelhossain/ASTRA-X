@@ -12,6 +12,7 @@ from app.scanner.nmap import run_nmap
 from app.scanner.crawler import crawl
 from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.xss_scanner import scan_xss
+from app.scanner.lfi_scanner import scan_lfi # anas
 
 app = Flask(__name__)
 
@@ -73,6 +74,15 @@ def scan():
                     print(f"[!] SQLi scan error: {e}")
 
         xss_vulnerabilities = []
+        lfi_vulnerabilities = [] #anas
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(scan_lfi, page): page for page in pages}
+            for future in as_completed(futures):
+                try:
+                    results = future.result()
+                    lfi_vulnerabilities.extend(results)
+                except Exception as e:
+                    print(f"[!] LFI scan error: {e}") #anas
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {executor.submit(scan_xss, page): page for page in pages}
             for future in as_completed(futures):
@@ -91,12 +101,14 @@ def scan():
     file_findings = scan_file_exposure(target) or []
     print("AFTER FILE SCAN")
     scan_id = str(uuid.uuid4())
+    print(lfi_vulnerabilities)
     scan_store[scan_id] = {
         "target_url": target,
         "open_ports": analysed_result,
         "pages_scanned": len(pages),
         "vulnerabilities": sqli_vulnerabilities,
         "xss_vulnerabilities": xss_vulnerabilities,
+        "lfi_vulnerabilities": lfi_vulnerabilities, #anas
         "file_findings": file_findings,
     }
    
@@ -106,11 +118,13 @@ def scan():
 
     return render_template("report.html",
                            scan_id=scan_id,
+                           pdf_mode=False,#anas
                            target_url=target,
                            open_ports=analysed_result,
                            pages_scanned=len(pages),
                            vulnerabilities=sqli_vulnerabilities,
                            xss_vulnerabilities=xss_vulnerabilities,
+                           lfi_vulnerabilities=lfi_vulnerabilities,
                            file_findings=file_findings)
 
 

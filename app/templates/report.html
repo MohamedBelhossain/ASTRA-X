@@ -43,7 +43,7 @@
         </div>
        
       </div>
-
+      
       <!-- Open Ports -->
       <div class="section">
         <h3>Open Ports</h3>
@@ -152,6 +152,30 @@
             <p>No XSS vulnerabilities found.</p>
           </div>
         {% endif %}
+      </div>
+      <!-- LFI-->
+      <div class="section">
+        <h3>LFI / Path Traversal Findings</h3>
+          {% if lfi_vulnerabilities %}
+            {% for vuln in lfi_vulnerabilities %}
+              <div class="vuln-card vuln-critical">
+                <div class="vuln-header">
+                  <span class="vuln-type">{{ vuln.type }}</span>
+                  <span class="severity-badge sev-critical">CRITICAL</span>
+                </div>
+                <div class="vuln-body">
+                  <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
+                  <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.param }}</span></p>
+                  <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+              <div class="no-vulns">
+                  <span class="no-vulns-icon">✓</span>
+                  <p>No LFI vulnerabilities found.</p>
+              </div>
+          {% endif %}
       </div>
       <!-- File Exposure Results -->
 <div class="section">
