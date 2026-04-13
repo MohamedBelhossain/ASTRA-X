@@ -15,7 +15,7 @@
     <div class="logo"></div>
     <div>
       <h1>WebVulnScan</h1>
-      <div class="subtitle">Scan a website for open ports</div>
+      <div class="subtitle">Ports · SQLi · XSS · LFI · Files · Subdomains</div>
     </div>
   </div>
 
@@ -64,13 +64,16 @@
 
 <script>
   const steps = [
-    { label: "Running Nmap port scan…",     pct: 15 },
-    { label: "Crawling pages…",              pct: 35 },
-    { label: "Extracting forms…",            pct: 50 },
-    { label: "Injecting SQL payloads…",      pct: 65 },
-    { label: "Running boolean tests…",       pct: 78 },
-    { label: "Running time-based tests…",    pct: 88 },
-    { label: "Finalising report…",           pct: 96 },
+    { label: "Running Nmap port scan…",          pct: 10 },
+    { label: "Crawling pages…",                   pct: 20 },
+    { label: "Extracting forms…",                 pct: 30 },
+    { label: "Injecting SQL payloads…",           pct: 40 },
+    { label: "Running boolean & time-based SQLi…",pct: 50 },
+    { label: "Testing XSS payloads…",             pct: 60 },
+    { label: "Testing LFI / path traversal…",     pct: 70 },
+    { label: "Scanning sensitive file exposure…", pct: 80 },
+    { label: "Enumerating subdomains…",           pct: 90 },
+    { label: "Finalising report…",                pct: 96 },
   ];
 
   const form       = document.getElementById("scan-form");
