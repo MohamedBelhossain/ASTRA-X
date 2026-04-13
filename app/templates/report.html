@@ -40,6 +40,14 @@
   <span class="summary-num">{{ file_findings | length }}</span>
   <span class="summary-label">Exposed Files</span>
 </div>
+          <div class="summary-badge {{ 'badge-danger' if lfi_vulnerabilities else 'badge-safe' }}">
+            <span class="summary-num">{{ lfi_vulnerabilities | length }}</span>
+            <span class="summary-label">LFI Found</span>
+          </div>
+           <div class="summary-badge {{ 'badge-danger' if subdomain_findings else 'badge-safe' }}">
+            <span class="summary-num">{{ subdomain_findings | length }}</span>
+            <span class="summary-label">Subdomains Found</span>
+          </div>
         </div>
        
       </div>
@@ -200,6 +208,43 @@
     <div class="no-vulns">
       <span class="no-vulns-icon">✓</span>
       <p>No sensitive files exposed.</p>
+    </div>
+  {% endif %}
+</div>
+<!-- Subdomain Results -->
+<div class="section">
+  <h3>Subdomain Enumeration</h3>
+  {% if subdomain_findings %}
+    <table>
+      <thead>
+        <tr>
+          <th>Subdomain</th>
+          <th>IP</th>
+          <th>Status</th>
+          <th>Title</th>
+          <th>Severity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in subdomain_findings %}
+          <tr>
+            <td>
+              <a href="{{ f.url }}" target="_blank" style="color:var(--accent)">
+                {{ f.subdomain }}
+              </a>
+            </td>
+            <td>{{ f.ip }}</td>
+            <td>{{ f.status }}</td>
+            <td>{{ f.title or "—" }}</td>
+            <td class="sev-{{ f.severity }}">{{ f.severity | upper }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="no-vulns">
+      <span class="no-vulns-icon">✓</span>
+      <p>No subdomains discovered.</p>
     </div>
   {% endif %}
 </div>

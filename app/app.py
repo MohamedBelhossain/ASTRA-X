@@ -12,7 +12,8 @@ from app.scanner.nmap import run_nmap
 from app.scanner.crawler import crawl
 from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.xss_scanner import scan_xss
-from app.scanner.lfi_scanner import scan_lfi # anas
+from app.scanner.lfi_scanner import scan_lfi
+from app.scanner.subdomain_scanner import scan_subdomains
 
 app = Flask(__name__)
 
@@ -64,68 +65,65 @@ def scan():
         analysed_result = analyse_nmap(nmap_result)
 
         sqli_vulnerabilities = []
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(scan_sqli, page): page for page in pages}
-            for future in as_completed(futures):
-                try:
-                    results = future.result()
-                    sqli_vulnerabilities.extend(results)
-                except Exception as e:
-                    print(f"[!] SQLi scan error: {e}")
-
         xss_vulnerabilities = []
-        lfi_vulnerabilities = [] #anas
+        lfi_vulnerabilities = []
+
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(scan_lfi, page): page for page in pages}
-            for future in as_completed(futures):
+            sqli_futures = {executor.submit(scan_sqli, page): page for page in pages}
+            xss_futures  = {executor.submit(scan_xss,  page): page for page in pages}
+            lfi_futures  = {executor.submit(scan_lfi,  page): page for page in pages}
+
+            for future in as_completed(sqli_futures):
                 try:
-                    results = future.result()
-                    lfi_vulnerabilities.extend(results)
+                    sqli_vulnerabilities.extend(future.result())
                 except Exception as e:
-                    print(f"[!] LFI scan error: {e}") #anas
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(scan_xss, page): page for page in pages}
-            for future in as_completed(futures):
+                    print(f"[!] SQLi error: {e}")
+
+            for future in as_completed(xss_futures):
                 try:
-                    results = future.result()
-                    xss_vulnerabilities.extend(results)
+                    xss_vulnerabilities.extend(future.result())
                 except Exception as e:
-                    print(f"[!] XSS scan error: {e}")
+                    print(f"[!] XSS error: {e}")
+
+            for future in as_completed(lfi_futures):
+                try:
+                    lfi_vulnerabilities.extend(future.result())
+                except Exception as e:
+                    print(f"[!] LFI error: {e}")
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            file_future      = executor.submit(scan_file_exposure, target)
+            subdomain_future = executor.submit(scan_subdomains, target)
+            file_findings      = file_future.result()
+            subdomain_findings = subdomain_future.result()
 
     except Exception as e:
         return render_template("error.html", message=f"Scan failed unexpectedly: {e}")
 
     # ── 5. store and render ─────────────────────────────
-    print("BEFORE FILE SCAN")
-
-    file_findings = scan_file_exposure(target) or []
-    print("AFTER FILE SCAN")
     scan_id = str(uuid.uuid4())
-    print(lfi_vulnerabilities)
     scan_store[scan_id] = {
         "target_url": target,
         "open_ports": analysed_result,
         "pages_scanned": len(pages),
         "vulnerabilities": sqli_vulnerabilities,
         "xss_vulnerabilities": xss_vulnerabilities,
-        "lfi_vulnerabilities": lfi_vulnerabilities, #anas
+        "lfi_vulnerabilities": lfi_vulnerabilities,
         "file_findings": file_findings,
+        "subdomain_findings": subdomain_findings,
     }
-   
-   
-
-#
 
     return render_template("report.html",
                            scan_id=scan_id,
-                           pdf_mode=False,#anas
+                           pdf_mode=False,
                            target_url=target,
                            open_ports=analysed_result,
                            pages_scanned=len(pages),
                            vulnerabilities=sqli_vulnerabilities,
                            xss_vulnerabilities=xss_vulnerabilities,
                            lfi_vulnerabilities=lfi_vulnerabilities,
-                           file_findings=file_findings)
+                           file_findings=file_findings,
+                           subdomain_findings=subdomain_findings)
 
 
 @app.route("/download/<scan_id>")
