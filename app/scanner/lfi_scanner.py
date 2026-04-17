@@ -24,9 +24,7 @@ SIGNATURES = [
 # common parameter names that are often vulnerable to LFI
 COMMON_PARAMS = [
     "file", "page", "include", "path", "template", "view",
-    "doc", "document", "folder", "root", "pg", "style",
-    "pdf", "layout", "conf", "config", "lang", "locale",
-    "module", "content", "site", "home", "dir", "load",
+    "doc", "lang",  # trimmed to top 8 most commonly exploited
 ]
 
 

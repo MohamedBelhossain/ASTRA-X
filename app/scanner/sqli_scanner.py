@@ -234,13 +234,13 @@ def scan_sqli(url):
             # ── 4. Time-based ───────────────────────────────────────────────
             key = (action, param, "time-based")
             if key not in found_params:
-                for payload in TIME_PAYLOADS:
+                for payload in TIME_PAYLOADS[:2]:   # only test top 2 to save time
                     data = _build_data(inputs, param, payload)
                     start = time.time()
-                    r = _send(method, action, data, timeout=7)
+                    r = _send(method, action, data, timeout=4)  # reduced from 7s
                     delay = time.time() - start
 
-                    if delay >= 4.5:
+                    if delay >= 3.0:
                         print(f"  [VULN] Time-based SQLi → param='{param}' payload='{payload}' delay={delay:.2f}s")
                         vulnerabilities.append({
                             "type": "time-based",
