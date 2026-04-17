@@ -1,8 +1,7 @@
-from flask import Flask, render_template, request, make_response
+from flask import Flask, render_template, request, make_response, Response, jsonify
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from weasyprint import HTML
-import uuid
-import socket
+import uuid, socket, time, json, threading
 import requests as req
 from urllib.parse import urlparse
 
@@ -17,113 +16,235 @@ from app.scanner.subdomain_scanner import scan_subdomains
 
 app = Flask(__name__)
 
+# scan_store holds final results keyed by scan_id
 scan_store = {}
 
+# event_store holds SSE queues keyed by scan_id
+# Each value is a list of JSON strings (events) + a "done" flag
+event_store = {}
+
+
+# ── helpers ──────────────────────────────────────────────────────────────
+
+def push(scan_id, event_type, data):
+    """Append a SSE event to the event store for a given scan."""
+    if scan_id not in event_store:
+        return
+    event_store[scan_id]["events"].append(
+        json.dumps({"type": event_type, "data": data})
+    )
+
+def log(scan_id, msg, level="info", request_data=None):
+    d = {"msg": msg, "level": level}
+    if request_data:
+        d["request"] = request_data
+    push(scan_id, "log", d)
+
+def phase(scan_id, name, status, count=None):
+    d = {"phase": name, "status": status}
+    if count is not None:
+        d["count"] = count
+    push(scan_id, "phase", d)
+
+def vuln_event(scan_id, category, data):
+    push(scan_id, "vuln", {"category": category, "data": data})
+
+
+# ── background scan runner ────────────────────────────────────────────────
+
+def run_scan(scan_id, target):
+    try:
+        # ── Phase 1: nmap + crawl ────────────────────────────────────────
+        phase(scan_id, "nmap", "running")
+        phase(scan_id, "crawl", "running")
+        log(scan_id, f"Starting port scan + crawl on {target}…")
+
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            nmap_future  = ex.submit(run_nmap, target)
+            crawl_future = ex.submit(crawl, target)
+            nmap_result  = nmap_future.result()
+            pages        = crawl_future.result()
+
+        analysed_result = analyse_nmap(nmap_result)
+        open_port_count = len(analysed_result) if analysed_result else 0
+
+        phase(scan_id, "nmap",  "done", open_port_count)
+        phase(scan_id, "crawl", "done", len(pages))
+        log(scan_id, f"Found {open_port_count} open port(s), {len(pages)} page(s) to test.", "success")
+
+        # ── Phase 2: SQLi / XSS / LFI ───────────────────────────────────
+        sqli_vulns = []
+        xss_vulns  = []
+        lfi_vulns  = []
+
+        phase(scan_id, "sqli", "running")
+        phase(scan_id, "xss",  "running")
+        phase(scan_id, "lfi",  "running")
+        log(scan_id, "Injecting payloads across all discovered pages…")
+
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            sqli_futures = {ex.submit(scan_sqli, p): p for p in pages}
+            xss_futures  = {ex.submit(scan_xss,  p): p for p in pages}
+            lfi_futures  = {ex.submit(scan_lfi,  p): p for p in pages}
+
+            for future in as_completed(sqli_futures):
+                try:
+                    results = future.result()
+                    for v in results:
+                        sqli_vulns.append(v)
+                        vuln_event(scan_id, "sqli", v)
+                        log(scan_id,
+                            f"[SQLi] {v.get('type','?')} on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            "vuln",
+                            {"method": "POST", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                except Exception as e:
+                    log(scan_id, f"SQLi error: {e}", "error")
+
+            for future in as_completed(xss_futures):
+                try:
+                    results = future.result()
+                    for v in results:
+                        xss_vulns.append(v)
+                        vuln_event(scan_id, "xss", v)
+                        log(scan_id,
+                            f"[XSS] {v.get('type','?')} on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            "vuln",
+                            {"method": "GET", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                except Exception as e:
+                    log(scan_id, f"XSS error: {e}", "error")
+
+            for future in as_completed(lfi_futures):
+                try:
+                    results = future.result()
+                    for v in results:
+                        lfi_vulns.append(v)
+                        vuln_event(scan_id, "lfi", v)
+                        log(scan_id,
+                            f"[LFI] Path traversal on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            "vuln",
+                            {"method": "GET", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                except Exception as e:
+                    log(scan_id, f"LFI error: {e}", "error")
+
+        phase(scan_id, "sqli", "done", len(sqli_vulns))
+        phase(scan_id, "xss",  "done", len(xss_vulns))
+        phase(scan_id, "lfi",  "done", len(lfi_vulns))
+        log(scan_id, f"Injection tests complete — {len(sqli_vulns)} SQLi, {len(xss_vulns)} XSS, {len(lfi_vulns)} LFI.", "success")
+
+        # ── Phase 3: file exposure + subdomains ──────────────────────────
+        phase(scan_id, "files", "running")
+        phase(scan_id, "subd",  "running")
+        log(scan_id, "Checking file exposure and enumerating subdomains…")
+
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            file_future      = ex.submit(scan_file_exposure, target)
+            subdomain_future = ex.submit(scan_subdomains, target)
+            file_findings      = file_future.result()
+            subdomain_findings = subdomain_future.result()
+
+        phase(scan_id, "files", "done", len(file_findings) if file_findings else 0)
+        phase(scan_id, "subd",  "done", len(subdomain_findings) if subdomain_findings else 0)
+        log(scan_id, f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
+                     f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).", "success")
+
+        # ── Store results ────────────────────────────────────────────────
+        scan_store[scan_id] = {
+            "target_url":        target,
+            "open_ports":        analysed_result,
+            "pages_scanned":     len(pages),
+            "vulnerabilities":   sqli_vulns,
+            "xss_vulnerabilities": xss_vulns,
+            "lfi_vulnerabilities": lfi_vulns,
+            "file_findings":     file_findings,
+            "subdomain_findings": subdomain_findings,
+        }
+
+        log(scan_id, "Scan complete. Building report…", "success")
+        push(scan_id, "done", {"scan_id": scan_id})
+
+    except Exception as e:
+        log(scan_id, f"Scan failed: {e}", "error")
+        push(scan_id, "error", {"msg": str(e)})
+    finally:
+        event_store[scan_id]["done"] = True
+
+
+# ── routes ────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
 
 
-@app.route("/scan", methods=["POST"])
-def scan():
-
+@app.route("/start-scan", methods=["POST"])
+def start_scan():
+    """Validate target, create scan_id, launch background thread, return scan_id."""
     target = request.form.get("url", "").strip()
 
-    # ── 1. basic input check ────────────────────────────
     if not target:
-        return render_template("error.html", message="No URL provided.")
+        return jsonify({"error": "No URL provided."}), 400
 
     if not target.startswith("http://") and not target.startswith("https://"):
         target = "http://" + target
 
-    # ── 2. DNS check ────────────────────────────────────
     hostname = urlparse(target).hostname
     try:
         socket.getaddrinfo(hostname, None)
     except socket.gaierror:
-        return render_template("error.html", message=f"Could not resolve hostname <strong>{hostname}</strong>. Check the URL and try again.")
+        return jsonify({"error": f"Could not resolve hostname '{hostname}'."}), 400
 
-    # ── 3. reachability check ───────────────────────────
     try:
         req.head(target, timeout=5, allow_redirects=True)
     except req.exceptions.ConnectionError:
-        return render_template("error.html", message=f"Could not connect to <strong>{target}</strong>. Check the URL and try again.")
+        return jsonify({"error": f"Could not connect to '{target}'."}), 400
     except req.exceptions.Timeout:
-        return render_template("error.html", message=f"Connection to <strong>{target}</strong> timed out.")
+        return jsonify({"error": f"Connection to '{target}' timed out."}), 400
     except req.exceptions.RequestException as e:
-        return render_template("error.html", message=f"Invalid or unreachable URL: {e}")
+        return jsonify({"error": f"Invalid or unreachable URL: {e}"}), 400
 
-    # ── 4. run scan ─────────────────────────────────────
-    try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            nmap_future = executor.submit(run_nmap, target)
-            crawl_future = executor.submit(crawl, target)
-            nmap_result = nmap_future.result()
-            pages = crawl_future.result()
-
-        analysed_result = analyse_nmap(nmap_result)
-
-        sqli_vulnerabilities = []
-        xss_vulnerabilities = []
-        lfi_vulnerabilities = []
-
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            sqli_futures = {executor.submit(scan_sqli, page): page for page in pages}
-            xss_futures  = {executor.submit(scan_xss,  page): page for page in pages}
-            lfi_futures  = {executor.submit(scan_lfi,  page): page for page in pages}
-
-            for future in as_completed(sqli_futures):
-                try:
-                    sqli_vulnerabilities.extend(future.result())
-                except Exception as e:
-                    print(f"[!] SQLi error: {e}")
-
-            for future in as_completed(xss_futures):
-                try:
-                    xss_vulnerabilities.extend(future.result())
-                except Exception as e:
-                    print(f"[!] XSS error: {e}")
-
-            for future in as_completed(lfi_futures):
-                try:
-                    lfi_vulnerabilities.extend(future.result())
-                except Exception as e:
-                    print(f"[!] LFI error: {e}")
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            file_future      = executor.submit(scan_file_exposure, target)
-            subdomain_future = executor.submit(scan_subdomains, target)
-            file_findings      = file_future.result()
-            subdomain_findings = subdomain_future.result()
-
-    except Exception as e:
-        return render_template("error.html", message=f"Scan failed unexpectedly: {e}")
-
-    # ── 5. store and render ─────────────────────────────
     scan_id = str(uuid.uuid4())
-    scan_store[scan_id] = {
-        "target_url": target,
-        "open_ports": analysed_result,
-        "pages_scanned": len(pages),
-        "vulnerabilities": sqli_vulnerabilities,
-        "xss_vulnerabilities": xss_vulnerabilities,
-        "lfi_vulnerabilities": lfi_vulnerabilities,
-        "file_findings": file_findings,
-        "subdomain_findings": subdomain_findings,
-    }
+    event_store[scan_id] = {"events": [], "done": False, "cursor": 0}
 
-    return render_template("report.html",
-                           scan_id=scan_id,
-                           pdf_mode=False,
-                           target_url=target,
-                           open_ports=analysed_result,
-                           pages_scanned=len(pages),
-                           vulnerabilities=sqli_vulnerabilities,
-                           xss_vulnerabilities=xss_vulnerabilities,
-                           lfi_vulnerabilities=lfi_vulnerabilities,
-                           file_findings=file_findings,
-                           subdomain_findings=subdomain_findings)
+    thread = threading.Thread(target=run_scan, args=(scan_id, target), daemon=True)
+    thread.start()
+
+    return jsonify({"scan_id": scan_id, "target": target})
+
+
+@app.route("/stream/<scan_id>")
+def stream(scan_id):
+    """SSE endpoint — streams events for a given scan_id."""
+    def generate():
+        store = event_store.get(scan_id)
+        if not store:
+            yield f"data: {json.dumps({'type':'error','data':{'msg':'Scan not found.'}})}\n\n"
+            return
+
+        while True:
+            cursor = store["cursor"]
+            events = store["events"]
+
+            while cursor < len(events):
+                yield f"data: {events[cursor]}\n\n"
+                cursor += 1
+
+            store["cursor"] = cursor
+
+            if store["done"] and cursor >= len(events):
+                break
+
+            time.sleep(0.2)
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/report/<scan_id>")
+def report(scan_id):
+    data = scan_store.get(scan_id)
+    if not data:
+        return render_template("error.html", message="Report not found or scan still running.")
+    return render_template("report.html", scan_id=scan_id, pdf_mode=False, **data)
 
 
 @app.route("/download/<scan_id>")
@@ -132,11 +253,7 @@ def download(scan_id):
     if not data:
         return render_template("error.html", message="Scan report not found or expired.")
 
-    html_content = render_template("report.html",
-                                   scan_id=scan_id,
-                                   pdf_mode=True,
-                                   **data)
-
+    html_content = render_template("report.html", scan_id=scan_id, pdf_mode=True, **data)
     pdf = HTML(string=html_content, base_url=request.host_url).write_pdf()
 
     response = make_response(pdf)
@@ -146,4 +263,4 @@ def download(scan_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000, threaded=True)

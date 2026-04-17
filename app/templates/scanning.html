@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scanning — WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* ── Layout ───────────────────────────────────────────────── */
+    body { margin: 0; background: var(--bg); font-family: var(--font); color: var(--text); }
+
+    .scan-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+      gap: 0;
+    }
+
+    /* ── Header bar ───────────────────────────────────────────── */
+    .scan-header {
+      grid-column: 1 / -1;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 28px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .scan-header .brand { display: flex; align-items: center; gap: 12px; }
+    .scan-header h1 { font-size: 1.1rem; margin: 0; }
+    .scan-header .target-pill {
+      background: rgba(0,255,120,.08);
+      border: 1px solid rgba(0,255,120,.2);
+      color: var(--accent);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: .85rem;
+      font-family: monospace;
+      margin-left: auto;
+    }
+    .pulse-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulsate 1.4s ease-in-out infinite;
+    }
+    @keyframes pulsate {
+      0%,100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(0,255,120,.4); }
+      50%      { opacity: .8; transform: scale(1.1); box-shadow: 0 0 0 6px rgba(0,255,120,0); }
+    }
+    .pulse-dot.done { background: #888; animation: none; }
+
+    /* ── Left sidebar: phases + live vulns ───────────────────── */
+    .scan-sidebar {
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .sidebar-section-title {
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #555;
+      padding: 0 20px 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+
+    /* Phase items */
+    .phase-list { padding: 8px 0; }
+    .phase-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 20px;
+      font-size: .85rem;
+      transition: background .15s;
+    }
+    .phase-item:hover { background: rgba(255,255,255,.03); }
+    .phase-icon {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .75rem;
+      flex-shrink: 0;
+      background: #222;
+      border: 1px solid #333;
+      color: #555;
+      font-weight: 700;
+    }
+    .phase-item.running .phase-icon {
+      border-color: var(--accent);
+      color: var(--accent);
+      animation: spin-border 1s linear infinite;
+    }
+    .phase-item.done .phase-icon {
+      background: rgba(0,255,120,.12);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .phase-item.vuln-found .phase-icon {
+      background: rgba(255,60,60,.12);
+      border-color: #ff3c3c;
+      color: #ff3c3c;
+    }
+    @keyframes spin-border {
+      0%   { box-shadow: 0 0 0 1px var(--accent); }
+      50%  { box-shadow: 0 0 8px 2px rgba(0,255,120,.3); }
+      100% { box-shadow: 0 0 0 1px var(--accent); }
+    }
+    .phase-label { flex: 1; color: #aaa; }
+    .phase-item.running .phase-label { color: var(--text); }
+    .phase-item.done .phase-label { color: #aaa; }
+    .phase-count {
+      font-size: .7rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 1px 8px;
+      color: #666;
+    }
+    .phase-item.vuln-found .phase-count {
+      background: rgba(255,60,60,.1);
+      border-color: #ff3c3c44;
+      color: #ff6060;
+    }
+
+    /* Live vulns in sidebar */
+    .live-vulns { padding: 4px 0; flex: 1; }
+    .live-vuln-item {
+      padding: 8px 20px;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    .live-vuln-item:hover { background: rgba(255,255,255,.03); }
+    .live-vuln-item.critical { border-left-color: #ff3c3c; }
+    .live-vuln-item.high     { border-left-color: #ff8c00; }
+    .live-vuln-item.medium   { border-left-color: #ffd600; }
+    .live-vuln-item.low      { border-left-color: #00bcd4; }
+    .live-vuln-label {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .live-vuln-label .tag {
+      font-size: .65rem;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .tag.sqli  { background: rgba(255,60,60,.15); color: #ff6060; }
+    .tag.xss   { background: rgba(255,140,0,.15);  color: #ffa040; }
+    .tag.lfi   { background: rgba(180,0,255,.15);  color: #c060ff; }
+    .live-vuln-url {
+      font-size: .7rem;
+      color: #555;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+      margin-top: 2px;
+    }
+
+    /* Expandable request detail */
+    .vuln-detail {
+      display: none;
+      background: #111;
+      margin: 4px 12px;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: .72rem;
+      color: #aaa;
+      line-height: 1.6;
+      border: 1px solid #222;
+    }
+    .vuln-detail.open { display: block; }
+    .vuln-detail .req-method { color: var(--accent); font-weight: 700; }
+    .vuln-detail .req-payload { color: #ff8c00; }
+    .vuln-detail .req-param   { color: #c060ff; }
+    .expand-btn {
+      font-size: .65rem;
+      color: #444;
+      margin-left: auto;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0 4px;
+      transition: color .15s;
+    }
+    .expand-btn:hover { color: var(--accent); }
+
+    /* ── Right: terminal ──────────────────────────────────────── */
+    .scan-terminal {
+      background: #0d0d0d;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .terminal-toolbar {
+      background: #141414;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .terminal-dot { width: 11px; height: 11px; border-radius: 50%; }
+    .terminal-dot.r { background: #ff5f57; }
+    .terminal-dot.y { background: #febc2e; }
+    .terminal-dot.g { background: #28c840; }
+    .terminal-title {
+      font-family: monospace;
+      font-size: .78rem;
+      color: #444;
+      margin-left: 6px;
+    }
+    .terminal-filter {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+    .filter-btn {
+      font-size: .68rem;
+      padding: 2px 10px;
+      border-radius: 12px;
+      border: 1px solid #2a2a2a;
+      background: transparent;
+      color: #555;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,255,120,.05); }
+    .filter-btn:hover { color: var(--text); }
+
+    .terminal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 4px 12px 0;
+      font-family: 'Courier New', monospace;
+      font-size: .78rem;
+      line-height: 1.7;
+    }
+    .terminal-body::-webkit-scrollbar { width: 4px; }
+    .terminal-body::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+
+    .log-line {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 1px 16px;
+      transition: background .1s;
+      animation: fadeIn .15s ease;
+    }
+    .log-line:hover { background: rgba(255,255,255,.02); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; } }
+    .log-ts {
+      color: #333;
+      font-size: .7rem;
+      flex-shrink: 0;
+      width: 54px;
+      text-align: right;
+    }
+    .log-badge {
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      min-width: 42px;
+      text-align: center;
+    }
+    .badge-info    { background: rgba(100,180,255,.1); color: #64b4ff; }
+    .badge-success { background: rgba(0,255,120,.08);  color: var(--accent); }
+    .badge-warn    { background: rgba(255,214,0,.08);  color: #ffd600; }
+    .badge-error   { background: rgba(255,60,60,.1);   color: #ff5050; }
+    .badge-vuln    { background: rgba(255,60,60,.18);  color: #ff3c3c; animation: blink .5s step-end 3; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .log-msg { color: #888; flex: 1; word-break: break-all; }
+    .log-msg.info    { color: #666; }
+    .log-msg.success { color: #9be9a8; }
+    .log-msg.warn    { color: #e3ba5e; }
+    .log-msg.error   { color: #ff7070; }
+    .log-msg.vuln    { color: #ff6060; font-weight: 600; }
+
+    /* Expandable request box inside terminal */
+    .log-expand-toggle {
+      font-size: .65rem;
+      color: #333;
+      cursor: pointer;
+      padding: 0 6px;
+      transition: color .15s;
+      user-select: none;
+    }
+    .log-expand-toggle:hover { color: var(--accent); }
+    .log-req-box {
+      display: none;
+      background: #121212;
+      border: 1px solid #222;
+      border-radius: 6px;
+      margin: 4px 16px 4px 70px;
+      padding: 8px 12px;
+      font-size: .73rem;
+      line-height: 1.7;
+    }
+    .log-req-box.open { display: block; }
+    .req-row { display: flex; gap: 12px; }
+    .req-key { color: #444; min-width: 60px; }
+    .req-val-method  { color: var(--accent); font-weight: 700; }
+    .req-val-url     { color: #6af; word-break: break-all; }
+    .req-val-param   { color: #c060ff; }
+    .req-val-payload { color: #ff8c00; word-break: break-all; }
+    .req-val-status  { color: #ffd600; }
+
+    /* ── Bottom: complete button ──────────────────────────────── */
+    .scan-footer {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      padding: 14px 28px;
+      background: var(--card);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .progress-track {
+      flex: 1;
+      height: 4px;
+      background: #1a1a1a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 4px;
+      transition: width .6s ease;
+      box-shadow: 0 0 8px rgba(0,255,120,.5);
+    }
+    .status-text { font-size: .8rem; color: #555; min-width: 200px; }
+    .view-report-btn {
+      display: none;
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: .9rem;
+      text-decoration: none;
+      transition: opacity .15s;
+    }
+    .view-report-btn:hover { opacity: .85; }
+    .view-report-btn.visible { display: inline-block; }
+  </style>
+</head>
+<body>
+
+<div class="scan-layout">
+
+  <!-- Header -->
+  <header class="scan-header">
+    <div class="brand">
+      <div class="logo"></div>
+      <h1>WebVulnScan</h1>
+    </div>
+    <div id="pulse" class="pulse-dot"></div>
+    <span id="status-label" style="font-size:.85rem;color:#666">Initialising scan…</span>
+    <div class="target-pill">{{ target_url }}</div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="scan-sidebar">
+    <div class="sidebar-section-title">Scan Phases</div>
+    <div class="phase-list" id="phase-list">
+      <div class="phase-item" id="phase-nmap">
+        <div class="phase-icon">1</div>
+        <span class="phase-label">Port Scan</span>
+        <span class="phase-count" id="cnt-nmap">—</span>
+      </div>
+      <div class="phase-item" id="phase-crawl">
+        <div class="phase-icon">2</div>
+        <span class="phase-label">Crawl</span>
+        <span class="phase-count" id="cnt-crawl">—</span>
+      </div>
+      <div class="phase-item" id="phase-sqli">
+        <div class="phase-icon">3</div>
+        <span class="phase-label">SQL Injection</span>
+        <span class="phase-count" id="cnt-sqli">—</span>
+      </div>
+      <div class="phase-item" id="phase-xss">
+        <div class="phase-icon">4</div>
+        <span class="phase-label">XSS</span>
+        <span class="phase-count" id="cnt-xss">—</span>
+      </div>
+      <div class="phase-item" id="phase-lfi">
+        <div class="phase-icon">5</div>
+        <span class="phase-label">LFI / Path Traversal</span>
+        <span class="phase-count" id="cnt-lfi">—</span>
+      </div>
+      <div class="phase-item" id="phase-files">
+        <div class="phase-icon">6</div>
+        <span class="phase-label">File Exposure</span>
+        <span class="phase-count" id="cnt-files">—</span>
+      </div>
+      <div class="phase-item" id="phase-subd">
+        <div class="phase-icon">7</div>
+        <span class="phase-label">Subdomains</span>
+        <span class="phase-count" id="cnt-subd">—</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section-title" style="margin-top:12px">Live Findings</div>
+    <div class="live-vulns" id="live-vulns">
+      <div style="padding:12px 20px;font-size:.78rem;color:#444" id="no-vulns-msg">No vulnerabilities found yet…</div>
+    </div>
+  </aside>
+
+  <!-- Terminal -->
+  <main class="scan-terminal">
+    <div class="terminal-toolbar">
+      <div class="terminal-dot r"></div>
+      <div class="terminal-dot y"></div>
+      <div class="terminal-dot g"></div>
+      <span class="terminal-title">scan-output — bash</span>
+      <div class="terminal-filter">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="vuln">Vulns</button>
+        <button class="filter-btn" data-filter="success">Found</button>
+        <button class="filter-btn" data-filter="error">Errors</button>
+      </div>
+    </div>
+    <div class="terminal-body" id="terminal-body"></div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="scan-footer">
+    <span class="status-text" id="footer-status">Connecting to scan engine…</span>
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <a class="view-report-btn" id="view-report-btn" href="#">View Full Report →</a>
+  </footer>
+
+</div>
+
+<script>
+  const SCAN_ID    = "{{ scan_id }}";
+  const streamUrl  = `/stream/${SCAN_ID}`;
+
+  const terminal   = document.getElementById("terminal-body");
+  const statusLbl  = document.getElementById("status-label");
+  const footerStat = document.getElementById("footer-status");
+  const progressFill = document.getElementById("progress-fill");
+  const pulse      = document.getElementById("pulse");
+  const reportBtn  = document.getElementById("view-report-btn");
+  const noVulnsMsg = document.getElementById("no-vulns-msg");
+  const liveVulns  = document.getElementById("live-vulns");
+
+  let logCount = 0;
+  let activeFilter = "all";
+  let scanStarted = Date.now();
+
+  const PHASE_PCT = {
+    nmap: 10, crawl: 20, sqli: 50, xss: 70, lfi: 80, files: 90, subd: 95
+  };
+  let currentPct = 0;
+
+  // ── Filter buttons ────────────────────────────────────────────
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeFilter = btn.dataset.filter;
+      document.querySelectorAll(".log-line").forEach(line => {
+        const lvl = line.dataset.level;
+        line.style.display =
+          (activeFilter === "all" || lvl === activeFilter) ? "flex" : "none";
+      });
+    });
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────
+  function ts() {
+    const d = new Date(Date.now() - scanStarted);
+    const s = Math.floor(d / 1000);
+    const ms = d % 1000;
+    return `${s}.${String(ms).padStart(3,'0').slice(0,2)}`;
+  }
+
+  function addLog(msg, level, requestData) {
+    const line = document.createElement("div");
+    line.className = "log-line";
+    line.dataset.level = level;
+    if (activeFilter !== "all" && level !== activeFilter) {
+      line.style.display = "none";
+    }
+
+    const badgeMap = {
+      info: "badge-info", success: "badge-success",
+      warn: "badge-warn", error: "badge-error", vuln: "badge-vuln"
+    };
+
+    const expandId = requestData ? `req-${++logCount}` : null;
+
+    line.innerHTML = `
+      <span class="log-ts">${ts()}s</span>
+      <span class="log-badge ${badgeMap[level] || 'badge-info'}">${level.toUpperCase()}</span>
+      <span class="log-msg ${level}">${escHtml(msg)}</span>
+      ${requestData ? `<span class="log-expand-toggle" onclick="toggleReq('${expandId}')">▶ details</span>` : ''}
+    `;
+
+    terminal.appendChild(line);
+
+    if (requestData) {
+      const reqBox = document.createElement("div");
+      reqBox.className = "log-req-box";
+      reqBox.id = expandId;
+      reqBox.innerHTML = buildReqBox(requestData);
+      terminal.appendChild(reqBox);
+    }
+
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function buildReqBox(r) {
+    let html = '';
+    if (r.method) html += `<div class="req-row"><span class="req-key">METHOD</span><span class="req-val-method">${escHtml(r.method)}</span></div>`;
+    if (r.url)    html += `<div class="req-row"><span class="req-key">URL</span><span class="req-val-url">${escHtml(r.url)}</span></div>`;
+    if (r.param)  html += `<div class="req-row"><span class="req-key">PARAM</span><span class="req-val-param">${escHtml(r.param)}</span></div>`;
+    if (r.payload)html += `<div class="req-row"><span class="req-key">PAYLOAD</span><span class="req-val-payload">${escHtml(r.payload)}</span></div>`;
+    if (r.status) html += `<div class="req-row"><span class="req-key">STATUS</span><span class="req-val-status">${escHtml(String(r.status))}</span></div>`;
+    return html;
+  }
+
+  window.toggleReq = function(id) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    box.classList.toggle("open");
+    const toggle = box.previousElementSibling.querySelector(".log-expand-toggle");
+    if (toggle) toggle.textContent = box.classList.contains("open") ? "▼ details" : "▶ details";
+  };
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function setProgress(pct, label) {
+    if (pct > currentPct) {
+      currentPct = pct;
+      progressFill.style.width = pct + "%";
+    }
+    footerStat.textContent = label;
+    statusLbl.textContent  = label;
+  }
+
+  function setPhase(phase, status, count) {
+    const el = document.getElementById(`phase-${phase}`);
+    if (!el) return;
+    el.className = `phase-item ${status}`;
+    if (count !== undefined) {
+      const cntEl = document.getElementById(`cnt-${phase}`);
+      if (cntEl) {
+        cntEl.textContent = count;
+        if (status === "vuln-found") cntEl.style.color = "#ff6060";
+      }
+      // mark as vuln-found if count > 0 and it's a vuln phase
+      if (count > 0 && ["sqli","xss","lfi"].includes(phase)) {
+        el.className = "phase-item vuln-found";
+      }
+    }
+    if (status === "running") {
+      const pct = PHASE_PCT[phase] || 50;
+      setProgress(pct, `Running ${el.querySelector(".phase-label").textContent}…`);
+    }
+  }
+
+  function addLiveVuln(category, vuln) {
+    noVulnsMsg.style.display = "none";
+    const severityMap = {sqli: getSqliSev(vuln.type), xss: getXssSev(vuln.type), lfi: "critical"};
+    const sev = severityMap[category] || "medium";
+
+    const id = `lv-${++logCount}`;
+    const item = document.createElement("div");
+    item.className = `live-vuln-item ${sev}`;
+    item.innerHTML = `
+      <div class="live-vuln-label">
+        <span class="tag ${category}">${category.toUpperCase()}</span>
+        ${escHtml(vuln.type || category)}
+        <button class="expand-btn" onclick="toggleDetail('${id}')">▶</button>
+      </div>
+      <div class="live-vuln-url">${escHtml((vuln.url || vuln.url || '').replace(/https?:\/\/[^/]+/, ''))}</div>
+    `;
+    liveVulns.appendChild(item);
+
+    const detail = document.createElement("div");
+    detail.className = "vuln-detail";
+    detail.id = id;
+    detail.innerHTML = buildReqBox({
+      method: "POST/GET",
+      url: vuln.url,
+      param: vuln.parameter || vuln.param,
+      payload: vuln.payload
+    });
+    liveVulns.appendChild(detail);
+  }
+
+  window.toggleDetail = function(id) {
+    const d = document.getElementById(id);
+    if (!d) return;
+    d.classList.toggle("open");
+    const btn = d.previousElementSibling.querySelector(".expand-btn");
+    if (btn) btn.textContent = d.classList.contains("open") ? "▼" : "▶";
+  };
+
+  function getSqliSev(t) {
+    if (t === "error-based") return "critical";
+    if (t === "boolean-based" || t === "time-based") return "high";
+    return "medium";
+  }
+  function getXssSev(t) {
+    if (t === "stored") return "critical";
+    if (t === "reflected") return "high";
+    return "medium";
+  }
+
+  // ── SSE ───────────────────────────────────────────────────────
+  addLog(`Connecting to scan engine for ${SCAN_ID}…`, "info");
+
+  const es = new EventSource(streamUrl);
+
+  es.onmessage = function(e) {
+    const ev = JSON.parse(e.data);
+    if (ev.type === "keepalive" || ev.type === "end") return;
+
+    if (ev.type === "log") {
+      addLog(ev.data.msg, ev.data.level || "info", ev.data.request || null);
+    }
+
+    if (ev.type === "phase") {
+      setPhase(ev.data.phase, ev.data.status, ev.data.count);
+    }
+
+    if (ev.type === "vuln") {
+      addLiveVuln(ev.data.category, ev.data.data);
+    }
+
+    if (ev.type === "done") {
+      es.close();
+      pulse.classList.add("done");
+      setProgress(100, "Scan complete!");
+      addLog("✓ Scan finished — building report…", "success");
+      reportBtn.href = `/report/${ev.data.scan_id}`;
+      reportBtn.classList.add("visible");
+    }
+
+    if (ev.type === "error") {
+      es.close();
+      pulse.classList.add("done");
+      addLog(`Scan error: ${ev.data.msg}`, "error");
+      setProgress(100, "Scan failed");
+    }
+  };
+
+  es.onerror = function() {
+    addLog("Connection to scan engine lost.", "error");
+  };
+</script>
+
+</body>
+</html>
