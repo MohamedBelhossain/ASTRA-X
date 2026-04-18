@@ -32,7 +32,7 @@ COMMON_PARAMS = [
     "doc", "document", "folder", "root", "pg", "style",
     "pdf", "layout", "conf", "lang", "locale", "module",
     "content", "dir", "load",
-    ,  # trimmed to top 8 most commonly exploited
+      # trimmed to top 8 most commonly exploited
 ]
 
 def inject_payload(url, param, payload):
