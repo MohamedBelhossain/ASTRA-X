@@ -5,15 +5,26 @@ from urllib.parse import urljoin, urlparse
 session = requests.Session()
 
 
-
-
 def normalize(url):
     parsed = urlparse(url)
-    return parsed.scheme + "://" + parsed.netloc + parsed.path
+    return parsed.scheme + "://" + parsed.netloc + parsed.path + (
+        "?" + parsed.query if parsed.query else ""
+    )
+
+
+def is_valid_link(href):
+    if not href:
+        return False
+    if href.startswith("#"):
+        return False
+    if href.startswith("javascript"):
+        return False
+    if href.startswith("mailto"):
+        return False
+    return True
 
 
 def get_links(url):
-
     links = set()
 
     try:
@@ -21,19 +32,9 @@ def get_links(url):
         soup = BeautifulSoup(response.text, "html.parser")
 
         for a in soup.find_all("a"):
-
             href = a.get("href")
 
-            if not href:
-                continue
-
-            if href.startswith("#"):
-                continue
-
-            if href.startswith("javascript"):
-                continue
-
-            if href.startswith("mailto"):
+            if not is_valid_link(href):
                 continue
 
             full_url = normalize(urljoin(url, href))
@@ -53,11 +54,9 @@ def crawl(target, max_pages=30):
     discovered = set()
 
     while to_visit and len(discovered) < max_pages:
-
         url = to_visit.pop()
 
         if url not in visited_urls:
-
             visited_urls.add(url)
             discovered.add(url)
 
@@ -66,6 +65,13 @@ def crawl(target, max_pages=30):
             for link in links:
                 if link not in visited_urls:
                     to_visit.append(link)
+
     pages = list(discovered)
-    pages = [p for p in pages if not p.endswith(('.jpg', '.png', '.css', '.js', '.pdf', '.ico', '.svg'))]
+
+    # filter static files
+    pages = [
+        p for p in pages
+        if not p.endswith(('.jpg', '.png', '.css', '.js', '.pdf', '.ico', '.svg'))
+    ]
+
     return pages
