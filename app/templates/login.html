@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login – WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="logo"></div>
+    <div>
+      <h1>WebVulnScan</h1>
+      <p class="subtitle">Sign in to your account</p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <form action="/login" method="POST">
+    <label>Email</label>
+    <input type="email" name="email" placeholder="you@example.com" required>
+
+    <label>Password</label>
+    <input type="password" name="password" placeholder="••••••••" required>
+
+    <button type="submit">Login</button>
+  </form>
+
+  <div class="footer">
+    Don't have an account? <a href="/register">Register</a>
+  </div>
+</div>
+
+</body>
+</html>
