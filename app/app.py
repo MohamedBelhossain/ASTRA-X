@@ -13,6 +13,7 @@ from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.xss_scanner import scan_xss
 from app.scanner.lfi_scanner import scan_lfi
 from app.scanner.subdomain_scanner import scan_subdomains
+from app.scanner.bruteforce_scanner import scan_bruteforce
 
 app = Flask(__name__)
 
