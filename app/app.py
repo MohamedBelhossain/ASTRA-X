@@ -4,7 +4,10 @@ from weasyprint import HTML
 import uuid, socket, time, json, threading
 import requests as req
 from urllib.parse import urlparse
+from flask_login import LoginManager, login_required, current_user
 
+from app.models import db, User
+from app.auth import auth, bcrypt
 from app.scanner.analyser import analyse_nmap
 from app.scanner.file_exposure import scan_file_exposure
 from app.scanner.nmap import run_nmap
@@ -15,19 +18,34 @@ from app.scanner.lfi_scanner import scan_lfi
 from app.scanner.subdomain_scanner import scan_subdomains
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = "CHANGE-THIS-TO-SOMETHING-RANDOM"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# scan_store holds final results keyed by scan_id
+db.init_app(app)
+bcrypt.init_app(app)
+app.register_blueprint(auth)
+
+login_manager = LoginManager()
+login_manager.login_view = "auth.login"
+login_manager.login_message = "Please log in to access this page."
+login_manager.login_message_category = "warning"
+login_manager.init_app(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+with app.app_context():
+    db.create_all()
+
 scan_store = {}
-
-# event_store holds SSE queues keyed by scan_id
-# Each value is a list of JSON strings (events) + a "done" flag
 event_store = {}
 
 
-# ── helpers ──────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────
 
 def push(scan_id, event_type, data):
-    """Append a SSE event to the event store for a given scan."""
     if scan_id not in event_store:
         return
     event_store[scan_id]["events"].append(
@@ -54,7 +72,6 @@ def vuln_event(scan_id, category, data):
 
 def run_scan(scan_id, target):
     try:
-        # ── Phase 1: nmap + crawl ────────────────────────────────────────
         phase(scan_id, "nmap", "running")
         phase(scan_id, "crawl", "running")
         log(scan_id, f"Starting port scan + crawl on {target}…")
@@ -72,7 +89,6 @@ def run_scan(scan_id, target):
         phase(scan_id, "crawl", "done", len(pages))
         log(scan_id, f"Found {open_port_count} open port(s), {len(pages)} page(s) to test.", "success")
 
-        # ── Phase 2: SQLi / XSS / LFI ───────────────────────────────────
         sqli_vulns = []
         xss_vulns  = []
         lfi_vulns  = []
@@ -131,14 +147,13 @@ def run_scan(scan_id, target):
         phase(scan_id, "lfi",  "done", len(lfi_vulns))
         log(scan_id, f"Injection tests complete — {len(sqli_vulns)} SQLi, {len(xss_vulns)} XSS, {len(lfi_vulns)} LFI.", "success")
 
-        # ── Phase 3: file exposure + subdomains ──────────────────────────
         phase(scan_id, "files", "running")
         phase(scan_id, "subd",  "running")
         log(scan_id, "Checking file exposure and enumerating subdomains…")
 
         with ThreadPoolExecutor(max_workers=2) as ex:
-            file_future      = ex.submit(scan_file_exposure, target)
-            subdomain_future = ex.submit(scan_subdomains, target)
+            file_future        = ex.submit(scan_file_exposure, target)
+            subdomain_future   = ex.submit(scan_subdomains, target)
             file_findings      = file_future.result()
             subdomain_findings = subdomain_future.result()
 
@@ -147,16 +162,15 @@ def run_scan(scan_id, target):
         log(scan_id, f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
                      f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).", "success")
 
-        # ── Store results ────────────────────────────────────────────────
         scan_store[scan_id] = {
-            "target_url":        target,
-            "open_ports":        analysed_result,
-            "pages_scanned":     len(pages),
-            "vulnerabilities":   sqli_vulns,
+            "target_url":          target,
+            "open_ports":          analysed_result,
+            "pages_scanned":       len(pages),
+            "vulnerabilities":     sqli_vulns,
             "xss_vulnerabilities": xss_vulns,
             "lfi_vulnerabilities": lfi_vulns,
-            "file_findings":     file_findings,
-            "subdomain_findings": subdomain_findings,
+            "file_findings":       file_findings,
+            "subdomain_findings":  subdomain_findings,
         }
 
         log(scan_id, "Scan complete. Building report…", "success")
@@ -172,13 +186,14 @@ def run_scan(scan_id, target):
 # ── routes ────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
+@login_required
 def index():
     return render_template("index.html")
 
 
 @app.route("/start-scan", methods=["POST"])
+@login_required
 def start_scan():
-    """Validate target, create scan_id, launch background thread, return scan_id."""
     target = request.form.get("url", "").strip()
 
     if not target:
@@ -212,8 +227,8 @@ def start_scan():
 
 
 @app.route("/stream/<scan_id>")
+@login_required
 def stream(scan_id):
-    """SSE endpoint — streams events for a given scan_id."""
     def generate():
         store = event_store.get(scan_id)
         if not store:
@@ -240,6 +255,7 @@ def stream(scan_id):
 
 
 @app.route("/report/<scan_id>")
+@login_required
 def report(scan_id):
     data = scan_store.get(scan_id)
     if not data:
@@ -248,6 +264,7 @@ def report(scan_id):
 
 
 @app.route("/download/<scan_id>")
+@login_required
 def download(scan_id):
     data = scan_store.get(scan_id)
     if not data:

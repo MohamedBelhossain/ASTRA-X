@@ -637,3 +637,13 @@ td {
   color: var(--text);
   line-height: 1.5;
 }
+/* Flash messages */
+.alert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.alert-danger  { background: #2a1a1a; color: #f87171; border: 1px solid #7f1d1d; }
+.alert-success { background: #0f2a1a; color: #4ade80; border: 1px solid #14532d; }
+.alert-warning { background: #2a2010; color: #facc15; border: 1px solid #78350f; }
