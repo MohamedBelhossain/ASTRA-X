@@ -4,57 +4,12 @@ from urllib.parse import urljoin
 from app.form_parser import get_forms
 from functools import lru_cache
 from requests.adapters import HTTPAdapter
-
-
-SQL_ERRORS = [
-    "sql syntax",
-    "mysql",
-    "syntax error",
-    "warning",
-    "unclosed quotation mark",
-    "quoted string not properly terminated",
-    "sqlstate",
-    "odbc",
-    "postgresql",
-    "oracle",
-    "sqlite",
-    "mssql",
-    "microsoft ole db",
-    "invalid query",
-    "division by zero",
-    "supplied argument is not a valid",
-    "pg_query",
-    "pg_exec",
-]
-
-# Payloads for error-based detection
-ERROR_PAYLOADS = [
-    "'",
-    "''",
-    "`",
-    "\"",
-    "\\",
-    "' --",
-    "' #",
-    "';--",
-]
-
-# Boolean-based pairs
-BOOLEAN_PAYLOADS = [
-    ("' OR '1'='1' --", "' OR '1'='2' --"),
-    ("' OR 1=1 --",     "' OR 1=2 --"),
-    ("1' OR '1'='1",    "1' OR '1'='2"),
-]
-
-# Time-based payloads (MySQL, MSSQL, PostgreSQL, SQLite)
-TIME_PAYLOADS = [
-    "' OR SLEEP(5) --",
-    "'; WAITFOR DELAY '0:0:5' --",
-    "' OR pg_sleep(5) --",
-    "' OR 1=1; SELECT SLEEP(5) --",
-]
-
-
+from app.scanner.payloads import (
+    SQLI_ERROR_PAYLOADS    as ERROR_PAYLOADS,
+    SQLI_BOOLEAN_PAYLOADS  as BOOLEAN_PAYLOADS,
+    SQLI_TIME_PAYLOADS     as TIME_PAYLOADS,
+    SQLI_ERROR_SIGNATURES  as SQL_ERRORS,
+)
 def _make_session():
     s = requests.Session()
     s.headers.update({

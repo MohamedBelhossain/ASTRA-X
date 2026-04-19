@@ -27,58 +27,13 @@ from bs4 import BeautifulSoup
 # ── Constants ────────────────────────────────────────────────────────────
 
 REQUEST_TIMEOUT = 8
-
-# Known WAF signature headers  (header-name → partial-value)
-WAF_HEADERS = {
-    "x-sucuri-id":         None,
-    "x-sucuri-cache":      None,
-    "x-firewall-protection": None,
-    "server":              "cloudflare",
-    "x-cdn":               "imperva",
-    "x-iinfo":             None,       # Incapsula
-    "x-protected-by":      None,
-    "x-waf-event-info":    None,
-    "x-amzn-waf-action":   None,       # AWS WAF
-    "x-azure-ref":         None,
-    "cf-ray":              None,       # Cloudflare
-}
-
-# Payloads designed to trip a WAF
-WAF_PROBE_PAYLOADS = [
-    "' OR 1=1--",
-    "<script>alert(1)</script>",
-    "../../etc/passwd",
-    "UNION SELECT NULL,NULL,NULL--",
-    "; DROP TABLE users--",
-]
-
-# Status codes that typically mean a WAF blocked the request
-WAF_BLOCK_CODES = {403, 406, 429, 503, 501}
-
-# Common username / password pairs to try
-DEFAULT_WORDLIST = [
-    ("admin",    "admin"),
-    ("admin",    "password"),
-    ("admin",    "123456"),
-    ("admin",    "admin123"),
-    ("admin",    "letmein"),
-    ("root",     "root"),
-    ("root",     "toor"),
-    ("root",     "password"),
-    ("user",     "user"),
-    ("user",     "password"),
-    ("test",     "test"),
-    ("test",     "password"),
-    ("guest",    "guest"),
-    ("admin",    "qwerty"),
-    ("administrator", "administrator"),
-    ("administrator", "password"),
-]
-
-# Keywords that suggest a URL / form is a login endpoint
-LOGIN_KEYWORDS = ("login", "signin", "sign-in", "auth", "account", "session", "wp-login")
-
-
+from app.scanner.payloads import (
+    WAF_HEADERS,
+    WAF_PROBE_PAYLOADS,
+    WAF_BLOCK_CODES,
+    BRUTEFORCE_WORDLIST        as DEFAULT_WORDLIST,
+    BRUTEFORCE_LOGIN_KEYWORDS  as LOGIN_KEYWORDS,
+)
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 def _session():
