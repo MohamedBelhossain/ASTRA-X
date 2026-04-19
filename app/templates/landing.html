@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebVulnScan</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080c10;
+      --bg2: #0d1318;
+      --bg3: #111820;
+      --border: rgba(255,255,255,0.07);
+      --border-accent: rgba(0,255,136,0.25);
+      --green: #00ff88;
+      --green-dim: #00c968;
+      --green-muted: rgba(0,255,136,0.12);
+      --amber: #ffb700;
+      --red: #ff4444;
+      --text: #e8edf2;
+      --text-muted: #6b7a8d;
+      --text-dim: #3d4f61;
+      --mono: "IBM Plex Mono", monospace;
+      --sans: "Space Grotesk", sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(0,255,136,0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 2rem 4rem;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 10px 10px 0 0;
+      background: rgba(13,19,24,0.9);
+      backdrop-filter: blur(12px);
+    }
+
+    .window-dots { display: flex; gap: 6px; }
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot.r { background: #ff5f57; }
+    .dot.y { background: #febc2e; }
+    .dot.g { background: #28c840; }
+
+    .topbar-title {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+    }
+
+    .topbar-badge {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      padding: 3px 10px;
+      border: 1px solid var(--border-accent);
+      border-radius: 20px;
+      color: var(--green);
+      background: var(--green-muted);
+      letter-spacing: 0.08em;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      background: rgba(8,12,16,0.95);
+      overflow: hidden;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+
+    .hero-left {
+      padding: 3.5rem 3rem;
+      border-right: 1px solid var(--border);
+    }
+
+    .hero-right {
+      padding: 3rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      background: var(--bg2);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 2.5rem;
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      border: 1.5px solid var(--green);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green-muted);
+      flex-shrink: 0;
+    }
+
+    .logo-icon::before {
+      content: "⬡";
+      font-size: 1.3rem;
+      color: var(--green);
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--text);
+    }
+
+    .brand-sub {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 1.2rem;
+    }
+
+    h1.headline {
+      font-size: 2.4rem;
+      font-weight: 600;
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin-bottom: 1.2rem;
+    }
+
+    h1.headline em {
+      font-style: normal;
+      color: var(--green);
+    }
+
+    .body-text {
+      font-size: 0.93rem;
+      line-height: 1.7;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      max-width: 420px;
+    }
+
+    .connect-block {
+      border: 1px solid var(--border-accent);
+      border-radius: 8px;
+      background: var(--green-muted);
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .connect-label {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 0.6rem;
+    }
+
+    .connect-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin-bottom: 1.1rem;
+    }
+
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 22px;
+      background: var(--green);
+      color: #050a07;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary:hover {
+      background: #00ff99;
+      transform: translateY(-1px);
+      box-shadow: 0 0 24px rgba(0,255,136,0.35);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 22px;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      border-radius: 6px;
+      text-decoration: none;
+      background: transparent;
+      transition: all 0.2s;
+    }
+
+    .btn-secondary:hover {
+      border-color: rgba(255,255,255,0.2);
+      color: var(--text);
+    }
+
+    .feature-label {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+
+    .feat-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.15rem 1.3rem;
+      background: var(--bg3);
+      transition: border-color 0.2s, background 0.2s;
+      cursor: default;
+    }
+
+    .feat-card:hover {
+      border-color: var(--border-accent);
+      background: rgba(0,255,136,0.04);
+    }
+
+    .feat-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0.5rem;
+    }
+
+    .feat-pill {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 500;
+      padding: 3px 9px;
+      background: rgba(0,255,136,0.1);
+      border: 1px solid rgba(0,255,136,0.18);
+      border-radius: 4px;
+      color: var(--green);
+      letter-spacing: 0.05em;
+    }
+
+    .feat-card p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .statusbar {
+      border-top: 1px solid var(--border);
+      padding: 0.7rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      background: var(--bg2);
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hero-left, .hero-right, .statusbar {
+      animation: fadeUp 0.5s ease both;
+    }
+
+    .hero-right { animation-delay: 0.1s; }
+    .statusbar  { animation-delay: 0.2s; }
+
+    @media (max-width: 760px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-left {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 2.5rem 1.8rem;
+      }
+      .hero-right { padding: 2rem 1.8rem; }
+      h1.headline { font-size: 1.8rem; }
+      .statusbar { gap: 1rem; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <div class="window-dots">
+      <span class="dot r"></span>
+      <span class="dot y"></span>
+      <span class="dot g"></span>
+    </div>
+    <span class="topbar-title">webvulnscan — security workspace v2.1</span>
+    <span class="topbar-badge">● SYSTEM READY</span>
+  </div>
+
+  <div class="card">
+    <div class="hero">
+
+      <div class="hero-left">
+        <div class="brand">
+          <div class="logo-icon"></div>
+          <div>
+            <div class="brand-name">WebVulnScan</div>
+            <div class="brand-sub">Web Vulnerability Scanner</div>
+          </div>
+        </div>
+
+        <div class="eyebrow">// Automated Security Analysis</div>
+        <h1 class="headline">Find weaknesses<br>before <em>attackers do.</em></h1>
+        <p class="body-text">WebVulnScan is an automated web vulnerability scanner that probes your targets for security flaws — from open ports and misconfigured services to injection vulnerabilities and exposed sensitive files. Point it at a URL, hit scan, and get a detailed breakdown of every risk found.</p>
+
+        <div class="connect-block">
+          <div class="connect-label">// Get Started</div>
+          <div class="connect-desc">Create a free account to connect to the scanner, run your first audit, and access the full vulnerability report dashboard.</div>
+          <div class="actions">
+            {% if logged_in %}
+              <a href="{{ url_for('index') }}" class="btn-primary">⬡ Connect &amp; Scan</a>
+              <a href="{{ url_for('auth.logout') }}" class="btn-secondary">Logout</a>
+            {% else %}
+              <a href="{{ url_for('auth.login') }}" class="btn-primary">⬡ Connect &amp; Scan</a>
+              <a href="{{ url_for('auth.register') }}" class="btn-secondary">Register</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="feature-label">// What WebVulnScan Detects</div>
+
+        <div class="feat-card">
+          <div class="feat-header">
+            <span class="feat-pill">Port &amp; Service Scan</span>
+          </div>
+          <p>Identifies open ports and exposed network services on the target host that could serve as entry points for attackers.</p>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-header">
+            <span class="feat-pill">SQL Injection · XSS · LFI</span>
+          </div>
+          <p>Tests web inputs and parameters for injection flaws — including SQLi, Cross-Site Scripting, and Local File Inclusion vulnerabilities.</p>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-header">
+            <span class="feat-pill">Exposed Files &amp; Paths</span>
+          </div>
+          <p>Crawls the target to surface sensitive files, admin panels, backup directories, and misconfigured endpoints left publicly accessible.</p>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-header">
+            <span class="feat-pill">Subdomain Enumeration</span>
+          </div>
+          <p>Discovers active subdomains to map the full attack surface — revealing forgotten or unprotected parts of the target infrastructure.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <div class="status-item"><span class="status-dot"></span>SCANNER ONLINE</div>
+      <div class="status-item"><span class="status-dot" style="background:var(--amber); animation:none"></span>AUTHORIZED USE ONLY</div>
+      <div class="status-item"><span class="status-dot"></span>REPORTS ENABLED</div>
+      <div class="status-item" style="margin-left:auto; font-size:0.6rem;">WebVulnScan © 2025 — Ethical security testing only</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

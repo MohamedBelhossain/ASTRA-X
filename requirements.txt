@@ -23,6 +23,7 @@ python-nmap==0.7.1
 
 # PDF generation
 weasyprint==62.3
+pydyf==0.11.0
 
 # Core deps
 blinker==1.9.0

@@ -5,10 +5,11 @@ import time
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import Flask, render_template, request, make_response, Response, jsonify
-from flask_login import LoginManager, login_required
+from flask import Flask, render_template, request, make_response, Response, jsonify, url_for
+from flask_login import LoginManager, login_required, current_user
 from weasyprint import HTML
 import requests as req
 from dotenv import load_dotenv
@@ -220,6 +221,7 @@ def run_scan(scan_id, target):
             "target_url":          target,
             "open_ports":          analysed_result,
             "pages_scanned":       len(pages),
+            "pages":               pages,
             "vulnerabilities":     sqli_vulns,
             "xss_vulnerabilities": xss_vulns,
             "lfi_vulnerabilities": lfi_vulns,
@@ -240,6 +242,13 @@ def run_scan(scan_id, target):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
+def home():
+    if current_user.is_authenticated:
+        return render_template("landing.html", logged_in=True)
+    return render_template("landing.html", logged_in=False)
+
+
+@app.route("/dashboard", methods=["GET"])
 @login_required
 def index():
     return render_template("index.html")
@@ -316,7 +325,13 @@ def report(scan_id):
     if not data:
         return render_template("error.html",
                                message="Report not found or scan still running.")
-    return render_template("report.html", scan_id=scan_id, pdf_mode=False, **data)
+    return render_template(
+        "report.html",
+        scan_id=scan_id,
+        pdf_mode=False,
+        stylesheet_href=url_for("static", filename="style.css"),
+        **data,
+    )
 
 
 @app.route("/download/<scan_id>")
@@ -326,8 +341,27 @@ def download(scan_id):
     if not data:
         return render_template("error.html", message="Scan report not found or expired.")
 
-    html_content = render_template("report.html", scan_id=scan_id, pdf_mode=True, **data)
-    pdf = HTML(string=html_content, base_url=request.host_url).write_pdf()
+    try:
+        stylesheet_href = (Path(app.root_path) / "static" / "report_pdf.css").resolve().as_uri()
+        html_content = render_template(
+            "report.html",
+            scan_id=scan_id,
+            pdf_mode=True,
+            stylesheet_href=stylesheet_href,
+            **data,
+        )
+        pdf = HTML(
+            string=html_content,
+            base_url=Path(app.root_path).resolve().as_uri(),
+        ).write_pdf()
+    except Exception as e:
+        return (
+            render_template(
+                "error.html",
+                message=f"Unable to generate the PDF report right now: {e}",
+            ),
+            500,
+        )
 
     response = make_response(pdf)
     response.headers["Content-Type"] = "application/pdf"

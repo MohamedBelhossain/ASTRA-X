@@ -6,40 +6,54 @@
   <title>Register – WebVulnScan</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-
-<div class="card">
-  <div class="brand">
-    <div class="logo"></div>
-    <div>
-      <h1>WebVulnScan</h1>
-      <p class="subtitle">Create an account</p>
+<body class="auth-page">
+<div class="page-shell" style="max-width:520px">
+  <section class="shell-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">WebVulnScan</span>
     </div>
-  </div>
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>WebVulnScan</h1>
+          <p class="subtitle">Create an account</p>
+        </div>
+      </div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="alert alert-{{ category }}">{{ message }}</div>
-    {% endfor %}
-  {% endwith %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
 
-  <form action="/register" method="POST">
-    <label>Username</label>
-    <input type="text" name="username" placeholder="yourname" required>
+      <form action="/register" method="POST" class="form-stack">
+        <div class="field-row">
+          <label>Username</label>
+          <input type="text" name="username" placeholder="yourname" required>
+        </div>
 
-    <label>Email</label>
-    <input type="email" name="email" placeholder="you@example.com" required>
+        <div class="field-row">
+          <label>Email</label>
+          <input type="email" name="email" placeholder="you@example.com" required>
+        </div>
 
-    <label>Password</label>
-    <input type="password" name="password" placeholder="••••••••" required>
+        <div class="field-row">
+          <label>Password</label>
+          <input type="password" name="password" placeholder="••••••••" required>
+        </div>
 
-    <button type="submit">Create Account</button>
-  </form>
+        <button type="submit">Create Account</button>
+      </form>
 
-  <div class="footer">
-    Already have an account? <a href="/login">Login</a>
-  </div>
+      <div class="footer">
+        Already have an account? <a href="/login">Login</a>
+      </div>
+    </div>
+  </section>
 </div>
-
 </body>
 </html>
