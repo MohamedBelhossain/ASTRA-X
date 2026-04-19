@@ -61,6 +61,7 @@ with app.app_context():
 # ── In-memory scan state (unchanged) ─────────────────────────────────────────
 scan_store  = {}
 event_store = {}
+SCAN_MODES = {"fast", "deep"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -100,13 +101,19 @@ def finding_signature(category, finding):
     return (category, endpoint, parameter, vuln_type, evidence)
 
 
+def mark_skipped(scan_id, phase_name, reason):
+    phase(scan_id, phase_name, "skipped", 0)
+    log(scan_id, f"Skipping {reason} in fast scan mode.", "warn")
+
+
 # ── Background scan runner ────────────────────────────────────────────────────
 
-def run_scan(scan_id, target):
+def run_scan(scan_id, target, scan_mode):
     try:
         phase(scan_id, "nmap",  "running")
         phase(scan_id, "crawl", "running")
-        log(scan_id, f"Starting port scan + crawl on {target}…")
+        log(scan_id, f"Starting {scan_mode} scan on {target}…")
+        log(scan_id, f"Running port scan + crawl for {scan_mode} mode…")
 
         with ThreadPoolExecutor(max_workers=2) as ex:
             nmap_future  = ex.submit(run_nmap, target)
@@ -126,16 +133,24 @@ def run_scan(scan_id, target):
         sqli_vulns = []
         xss_vulns  = []
         lfi_vulns  = []
+        file_findings = []
+        subdomain_findings = []
 
         phase(scan_id, "sqli", "running")
         phase(scan_id, "xss",  "running")
-        phase(scan_id, "lfi",  "running")
-        log(scan_id, "Injecting payloads across all discovered pages…")
+        if scan_mode == "deep":
+            phase(scan_id, "lfi", "running")
+            log(scan_id, "Injecting payloads across all discovered pages…")
+        else:
+            mark_skipped(scan_id, "lfi", "LFI checks")
+            mark_skipped(scan_id, "files", "file exposure checks")
+            mark_skipped(scan_id, "subd", "subdomain enumeration")
+            log(scan_id, "Fast mode enabled: running only the quickest core checks.", "warn")
 
         with ThreadPoolExecutor(max_workers=10) as ex:
             sqli_futures = {ex.submit(scan_sqli, p): p for p in pages}
             xss_futures  = {ex.submit(scan_xss,  p): p for p in pages}
-            lfi_futures  = {ex.submit(scan_lfi,  p): p for p in pages}
+            lfi_futures  = {ex.submit(scan_lfi,  p): p for p in pages} if scan_mode == "deep" else {}
             seen_findings = set()
 
             for future in as_completed(sqli_futures):
@@ -174,50 +189,54 @@ def run_scan(scan_id, target):
                 except Exception as e:
                     log(scan_id, f"XSS error: {e}", "error")
 
-            for future in as_completed(lfi_futures):
-                try:
-                    for v in future.result():
-                        sig = finding_signature("lfi", v)
-                        if sig in seen_findings:
-                            continue
-                        seen_findings.add(sig)
-                        lfi_vulns.append(v)
-                        vuln_event(scan_id, "lfi", v)
-                        log(scan_id,
-                            f"[LFI] Path traversal on param '{v.get('parameter','?')}'"
-                            f" at {v.get('url','?')}",
-                            "vuln",
-                            {"method": "GET", "url": v.get("url"),
-                             "param": v.get("parameter"), "payload": v.get("payload")})
-                except Exception as e:
-                    log(scan_id, f"LFI error: {e}", "error")
+            if scan_mode == "deep":
+                for future in as_completed(lfi_futures):
+                    try:
+                        for v in future.result():
+                            sig = finding_signature("lfi", v)
+                            if sig in seen_findings:
+                                continue
+                            seen_findings.add(sig)
+                            lfi_vulns.append(v)
+                            vuln_event(scan_id, "lfi", v)
+                            log(scan_id,
+                                f"[LFI] Path traversal on param '{v.get('parameter','?')}'"
+                                f" at {v.get('url','?')}",
+                                "vuln",
+                                {"method": "GET", "url": v.get("url"),
+                                 "param": v.get("parameter"), "payload": v.get("payload")})
+                    except Exception as e:
+                        log(scan_id, f"LFI error: {e}", "error")
 
         phase(scan_id, "sqli", "done", len(sqli_vulns))
         phase(scan_id, "xss",  "done", len(xss_vulns))
-        phase(scan_id, "lfi",  "done", len(lfi_vulns))
+        if scan_mode == "deep":
+            phase(scan_id, "lfi",  "done", len(lfi_vulns))
         log(scan_id,
             f"Injection tests complete — {len(sqli_vulns)} SQLi, "
             f"{len(xss_vulns)} XSS, {len(lfi_vulns)} LFI.",
             "success")
 
-        phase(scan_id, "files", "running")
-        phase(scan_id, "subd",  "running")
-        log(scan_id, "Checking file exposure and enumerating subdomains…")
+        if scan_mode == "deep":
+            phase(scan_id, "files", "running")
+            phase(scan_id, "subd",  "running")
+            log(scan_id, "Checking file exposure and enumerating subdomains…")
 
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            file_future        = ex.submit(scan_file_exposure, target)
-            subdomain_future   = ex.submit(scan_subdomains, target)
-            file_findings      = file_future.result()
-            subdomain_findings = subdomain_future.result()
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                file_future        = ex.submit(scan_file_exposure, target)
+                subdomain_future   = ex.submit(scan_subdomains, target)
+                file_findings      = file_future.result()
+                subdomain_findings = subdomain_future.result()
 
-        phase(scan_id, "files", "done", len(file_findings)      if file_findings      else 0)
-        phase(scan_id, "subd",  "done", len(subdomain_findings) if subdomain_findings else 0)
-        log(scan_id,
-            f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
-            f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).",
-            "success")
+            phase(scan_id, "files", "done", len(file_findings)      if file_findings      else 0)
+            phase(scan_id, "subd",  "done", len(subdomain_findings) if subdomain_findings else 0)
+            log(scan_id,
+                f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
+                f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).",
+                "success")
 
         scan_store[scan_id] = {
+            "scan_mode":           scan_mode,
             "target_url":          target,
             "open_ports":          analysed_result,
             "pages_scanned":       len(pages),
@@ -258,9 +277,13 @@ def index():
 @login_required
 def start_scan():
     target = request.form.get("url", "").strip()
+    scan_mode = request.form.get("scan_mode", "deep").strip().lower()
 
     if not target:
         return jsonify({"error": "No URL provided."}), 400
+
+    if scan_mode not in SCAN_MODES:
+        return jsonify({"error": "Invalid scan mode."}), 400
 
     if not target.startswith(("http://", "https://")):
         target = "http://" + target
@@ -283,10 +306,10 @@ def start_scan():
     scan_id = str(uuid.uuid4())
     event_store[scan_id] = {"events": [], "done": False}
 
-    thread = threading.Thread(target=run_scan, args=(scan_id, target), daemon=True)
+    thread = threading.Thread(target=run_scan, args=(scan_id, target, scan_mode), daemon=True)
     thread.start()
 
-    return jsonify({"scan_id": scan_id, "target": target})
+    return jsonify({"scan_id": scan_id, "target": target, "scan_mode": scan_mode})
 
 
 @app.route("/stream/<scan_id>")
