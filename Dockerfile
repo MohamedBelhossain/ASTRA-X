@@ -17,4 +17,7 @@ RUN apt-get update \
 
 COPY . .
 
+# MONGO_URI and SECRET_KEY should be passed as environment variables at runtime
+# e.g.: docker run -e MONGO_URI="mongodb://mongo:27017/webvuln" -e SECRET_KEY="..." ...
+
 CMD ["python", "-m", "app.app"]

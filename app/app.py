@@ -1,12 +1,19 @@
-from flask import Flask, render_template, request, make_response, Response, jsonify
+import os
+import uuid
+import socket
+import time
+import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from weasyprint import HTML
-import uuid, socket, time, json, threading
-import requests as req
 from urllib.parse import urlparse
-from flask_login import LoginManager, login_required, current_user
 
-from app.models import db, User
+from flask import Flask, render_template, request, make_response, Response, jsonify
+from flask_login import LoginManager, login_required
+from weasyprint import HTML
+import requests as req
+from dotenv import load_dotenv
+
+from app.models import mongo, User
 from app.auth import auth, bcrypt
 from app.scanner.analyser import analyse_nmap
 from app.scanner.file_exposure import scan_file_exposure
@@ -16,35 +23,46 @@ from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.xss_scanner import scan_xss
 from app.scanner.lfi_scanner import scan_lfi
 from app.scanner.subdomain_scanner import scan_subdomains
-from app.scanner.bruteforce_scanner import scan_bruteforce
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "CHANGE-THIS-TO-SOMETHING-RANDOM"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-db.init_app(app)
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(ENV_PATH)
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+app.config.update(
+    SECRET_KEY=os.environ.get("SECRET_KEY", "dev-secret-key-change-me"),
+    MONGO_URI=os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln"),
+)
+
+# ── Extensions ────────────────────────────────────────────────────────────────
+mongo.init_app(app)
 bcrypt.init_app(app)
 app.register_blueprint(auth)
 
+# ── Flask-Login ───────────────────────────────────────────────────────────────
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "warning"
 login_manager.init_app(app)
 
+
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return User.find_by_id(user_id)
 
+
+# ── Ensure MongoDB indexes on first request ───────────────────────────────────
 with app.app_context():
-    db.create_all()
+    User.ensure_indexes()
 
-scan_store = {}
+# ── In-memory scan state (unchanged) ─────────────────────────────────────────
+scan_store  = {}
 event_store = {}
 
 
-# ── helpers ───────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def push(scan_id, event_type, data):
     if scan_id not in event_store:
@@ -53,11 +71,13 @@ def push(scan_id, event_type, data):
         json.dumps({"type": event_type, "data": data})
     )
 
+
 def log(scan_id, msg, level="info", request_data=None):
     d = {"msg": msg, "level": level}
     if request_data:
         d["request"] = request_data
     push(scan_id, "log", d)
+
 
 def phase(scan_id, name, status, count=None):
     d = {"phase": name, "status": status}
@@ -65,15 +85,25 @@ def phase(scan_id, name, status, count=None):
         d["count"] = count
     push(scan_id, "phase", d)
 
+
 def vuln_event(scan_id, category, data):
     push(scan_id, "vuln", {"category": category, "data": data})
 
 
-# ── background scan runner ────────────────────────────────────────────────
+def finding_signature(category, finding):
+    parsed = urlparse(finding.get("url", ""))
+    endpoint = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.netloc else parsed.path
+    parameter = finding.get("parameter") or finding.get("param") or ""
+    vuln_type = finding.get("type") or ""
+    evidence = finding.get("matched_error") or finding.get("evidence") or ""
+    return (category, endpoint, parameter, vuln_type, evidence)
+
+
+# ── Background scan runner ────────────────────────────────────────────────────
 
 def run_scan(scan_id, target):
     try:
-        phase(scan_id, "nmap", "running")
+        phase(scan_id, "nmap",  "running")
         phase(scan_id, "crawl", "running")
         log(scan_id, f"Starting port scan + crawl on {target}…")
 
@@ -88,7 +118,9 @@ def run_scan(scan_id, target):
 
         phase(scan_id, "nmap",  "done", open_port_count)
         phase(scan_id, "crawl", "done", len(pages))
-        log(scan_id, f"Found {open_port_count} open port(s), {len(pages)} page(s) to test.", "success")
+        log(scan_id,
+            f"Found {open_port_count} open port(s), {len(pages)} page(s) to test.",
+            "success")
 
         sqli_vulns = []
         xss_vulns  = []
@@ -103,50 +135,69 @@ def run_scan(scan_id, target):
             sqli_futures = {ex.submit(scan_sqli, p): p for p in pages}
             xss_futures  = {ex.submit(scan_xss,  p): p for p in pages}
             lfi_futures  = {ex.submit(scan_lfi,  p): p for p in pages}
+            seen_findings = set()
 
             for future in as_completed(sqli_futures):
                 try:
-                    results = future.result()
-                    for v in results:
+                    for v in future.result():
+                        sig = finding_signature("sqli", v)
+                        if sig in seen_findings:
+                            continue
+                        seen_findings.add(sig)
                         sqli_vulns.append(v)
                         vuln_event(scan_id, "sqli", v)
                         log(scan_id,
-                            f"[SQLi] {v.get('type','?')} on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            f"[SQLi] {v.get('type','?')} on param '{v.get('parameter','?')}'"
+                            f" at {v.get('url','?')}",
                             "vuln",
-                            {"method": "POST", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                            {"method": "POST", "url": v.get("url"),
+                             "param": v.get("parameter"), "payload": v.get("payload")})
                 except Exception as e:
                     log(scan_id, f"SQLi error: {e}", "error")
 
             for future in as_completed(xss_futures):
                 try:
-                    results = future.result()
-                    for v in results:
+                    for v in future.result():
+                        sig = finding_signature("xss", v)
+                        if sig in seen_findings:
+                            continue
+                        seen_findings.add(sig)
                         xss_vulns.append(v)
                         vuln_event(scan_id, "xss", v)
                         log(scan_id,
-                            f"[XSS] {v.get('type','?')} on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            f"[XSS] {v.get('type','?')} on param '{v.get('parameter','?')}'"
+                            f" at {v.get('url','?')}",
                             "vuln",
-                            {"method": "GET", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                            {"method": "GET", "url": v.get("url"),
+                             "param": v.get("parameter"), "payload": v.get("payload")})
                 except Exception as e:
                     log(scan_id, f"XSS error: {e}", "error")
 
             for future in as_completed(lfi_futures):
                 try:
-                    results = future.result()
-                    for v in results:
+                    for v in future.result():
+                        sig = finding_signature("lfi", v)
+                        if sig in seen_findings:
+                            continue
+                        seen_findings.add(sig)
                         lfi_vulns.append(v)
                         vuln_event(scan_id, "lfi", v)
                         log(scan_id,
-                            f"[LFI] Path traversal on param '{v.get('parameter','?')}' at {v.get('url','?')}",
+                            f"[LFI] Path traversal on param '{v.get('parameter','?')}'"
+                            f" at {v.get('url','?')}",
                             "vuln",
-                            {"method": "GET", "url": v.get("url"), "param": v.get("parameter"), "payload": v.get("payload")})
+                            {"method": "GET", "url": v.get("url"),
+                             "param": v.get("parameter"), "payload": v.get("payload")})
                 except Exception as e:
                     log(scan_id, f"LFI error: {e}", "error")
 
         phase(scan_id, "sqli", "done", len(sqli_vulns))
         phase(scan_id, "xss",  "done", len(xss_vulns))
         phase(scan_id, "lfi",  "done", len(lfi_vulns))
-        log(scan_id, f"Injection tests complete — {len(sqli_vulns)} SQLi, {len(xss_vulns)} XSS, {len(lfi_vulns)} LFI.", "success")
+        log(scan_id,
+            f"Injection tests complete — {len(sqli_vulns)} SQLi, "
+            f"{len(xss_vulns)} XSS, {len(lfi_vulns)} LFI.",
+            "success")
 
         phase(scan_id, "files", "running")
         phase(scan_id, "subd",  "running")
@@ -158,10 +209,12 @@ def run_scan(scan_id, target):
             file_findings      = file_future.result()
             subdomain_findings = subdomain_future.result()
 
-        phase(scan_id, "files", "done", len(file_findings) if file_findings else 0)
+        phase(scan_id, "files", "done", len(file_findings)      if file_findings      else 0)
         phase(scan_id, "subd",  "done", len(subdomain_findings) if subdomain_findings else 0)
-        log(scan_id, f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
-                     f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).", "success")
+        log(scan_id,
+            f"Found {len(file_findings) if file_findings else 0} exposed file(s), "
+            f"{len(subdomain_findings) if subdomain_findings else 0} subdomain(s).",
+            "success")
 
         scan_store[scan_id] = {
             "target_url":          target,
@@ -184,7 +237,7 @@ def run_scan(scan_id, target):
         event_store[scan_id]["done"] = True
 
 
-# ── routes ────────────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
 @login_required
@@ -200,7 +253,7 @@ def start_scan():
     if not target:
         return jsonify({"error": "No URL provided."}), 400
 
-    if not target.startswith("http://") and not target.startswith("https://"):
+    if not target.startswith(("http://", "https://")):
         target = "http://" + target
 
     hostname = urlparse(target).hostname
@@ -219,7 +272,7 @@ def start_scan():
         return jsonify({"error": f"Invalid or unreachable URL: {e}"}), 400
 
     scan_id = str(uuid.uuid4())
-    event_store[scan_id] = {"events": [], "done": False, "cursor": 0}
+    event_store[scan_id] = {"events": [], "done": False}
 
     thread = threading.Thread(target=run_scan, args=(scan_id, target), daemon=True)
     thread.start()
@@ -236,23 +289,24 @@ def stream(scan_id):
             yield f"data: {json.dumps({'type':'error','data':{'msg':'Scan not found.'}})}\n\n"
             return
 
+        cursor = 0
         while True:
-            cursor = store["cursor"]
             events = store["events"]
 
             while cursor < len(events):
                 yield f"data: {events[cursor]}\n\n"
                 cursor += 1
 
-            store["cursor"] = cursor
-
             if store["done"] and cursor >= len(events):
                 break
 
             time.sleep(0.2)
 
-    return Response(generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/report/<scan_id>")
@@ -260,7 +314,8 @@ def stream(scan_id):
 def report(scan_id):
     data = scan_store.get(scan_id)
     if not data:
-        return render_template("error.html", message="Report not found or scan still running.")
+        return render_template("error.html",
+                               message="Report not found or scan still running.")
     return render_template("report.html", scan_id=scan_id, pdf_mode=False, **data)
 
 
@@ -276,7 +331,9 @@ def download(scan_id):
 
     response = make_response(pdf)
     response.headers["Content-Type"] = "application/pdf"
-    response.headers["Content-Disposition"] = f"attachment; filename=scan_report_{scan_id[:8]}.pdf"
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=scan_report_{scan_id[:8]}.pdf"
+    )
     return response
 
 
