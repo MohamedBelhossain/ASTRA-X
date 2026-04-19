@@ -285,33 +285,51 @@
   </style>
 </head>
 
-<body>
+<body class="index-page">
 
-<div class="card">
-<div style="text-align:right; margin-bottom: 12px; font-size: 13px;">
-  Logged in as <strong>{{ current_user.username }}</strong> &nbsp;·&nbsp;
-  <a href="/logout">Logout</a>
-</div>
-  <div class="brand">
-    <div class="logo"></div>
-    <div>
-      <h1>WebVulnScan</h1>
-      <div class="subtitle">Ports · SQLi · XSS · LFI · Files · Subdomains</div>
+<div class="page-shell">
+  <section class="shell-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">WebVulnScan</span>
     </div>
-  </div>
+    <div class="page-panel">
+      <div class="hero-strip">
+        <div class="hero-copy">
+          <div class="brand">
+            <div class="logo"></div>
+            <div>
+              <h1>WebVulnScan</h1>
+              <div class="subtitle">Ports · SQLi · XSS · LFI · Files · Subdomains</div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-side">
+          <div class="scan-actions">
+            <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
+            <a href="/logout" class="back-link">Logout</a>
+          </div>
 
-  <form id="scan-form">
-    <label>Target URL</label>
-    <input id="url-input" type="text" name="url" placeholder="https://example.com" required>
-    <button type="submit" id="scan-btn">
-      <span id="btn-text">Start Scan</span>
-      <span id="btn-spinner" class="btn-spinner hidden"></span>
-    </button>
-  </form>
+          <form id="scan-form" class="form-stack">
+            <div class="field-row">
+              <label>Target URL</label>
+              <input id="url-input" type="text" name="url" placeholder="https://example.com" required>
+            </div>
+            <button type="submit" id="scan-btn">
+              <span id="btn-text">Start Scan</span>
+              <span id="btn-spinner" class="btn-spinner hidden"></span>
+            </button>
+          </form>
 
-  <div id="err-banner" class="err-banner"></div>
+          <div id="err-banner" class="err-banner"></div>
 
-  <div class="footer">Educational use only</div>
+          <div class="footer">Educational use only</div>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <!-- ── Live scan overlay ────────────────────────────────────── -->

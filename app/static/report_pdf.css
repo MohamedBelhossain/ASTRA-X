@@ -1,0 +1,269 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: #111;
+  background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.report-container {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 20px;
+  background: #fff;
+  border: none;
+  box-shadow: none;
+}
+
+.page-panel {
+  padding: 0;
+}
+
+.window-bar,
+.download-btn,
+.back-link,
+.detail-toggle,
+script {
+  display: none !important;
+}
+
+.hero-strip {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.hero-copy,
+.hero-side {
+  background: #fff;
+  border: none;
+  padding: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #12a150;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 10px;
+  color: #12a150;
+}
+
+.subtitle,
+.muted,
+.vuln-key,
+.summary-label,
+.detail-key {
+  color: #555;
+}
+
+.mono-pill {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #d8d8d8;
+  border-radius: 999px;
+  color: #444;
+  background: #f6f6f6;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.summary-badge {
+  min-width: 120px;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #f8f8f8;
+}
+
+.summary-badge.badge-danger {
+  background: #fff2f2;
+  border-color: #f0bcbc;
+}
+
+.summary-badge.badge-safe {
+  background: #f2fbf5;
+  border-color: #b9dec3;
+}
+
+.summary-num {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111;
+}
+
+.section {
+  margin-bottom: 22px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #ddd;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+th,
+td {
+  border: 1px solid #d9d9d9;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #f2f2f2;
+  color: #333;
+}
+
+td {
+  background: #fff;
+  color: #111;
+}
+
+.port-status-open {
+  color: #14853f;
+  font-weight: 700;
+}
+
+.port-status-closed,
+.port-status-filtered {
+  color: #c62828;
+  font-weight: 700;
+}
+
+.vuln-card {
+  margin: 12px 0;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fafafa;
+  break-inside: avoid;
+}
+
+.vuln-critical { border-left: 4px solid #d32f2f; }
+.vuln-high     { border-left: 4px solid #f57c00; }
+.vuln-medium   { border-left: 4px solid #fbc02d; }
+.vuln-low      { border-left: 4px solid #689f38; }
+
+.vuln-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #ddd;
+  background: #f2f2f2;
+}
+
+.severity-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sev-critical { color: #c62828; }
+.sev-high     { color: #ef6c00; }
+.sev-medium   { color: #b28704; }
+.sev-low      { color: #558b2f; }
+.sev-info     { color: #666; }
+
+.vuln-body {
+  padding: 12px 14px;
+}
+
+.vuln-body p {
+  margin: 6px 0;
+}
+
+.vuln-key {
+  display: inline-block;
+  min-width: 110px;
+}
+
+.vuln-val,
+.detail-val {
+  color: #111;
+  word-break: break-word;
+}
+
+.vuln-code {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #d6d6d6;
+  border-radius: 4px;
+  background: #f3f3f3;
+  color: #0f7f45;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.no-vulns,
+.error-box {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #b9dec3;
+  background: #f2fbf5;
+  color: #14853f;
+}
+
+.vuln-details-panel,
+.pages-list {
+  display: block !important;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.detail-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.detail-sep {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 8px 0;
+}
+
+.page-url {
+  display: block;
+  margin: 2px 0;
+  color: #0f7f45;
+  text-decoration: none;
+}

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Report — {{ target_url }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ stylesheet_href }}">
+    {% if not pdf_mode %}
     <style>
       /* ── Report extras ─────────────────────────────────── */
       .report-container { max-width: 1000px; margin: 0 auto; padding: 28px 20px 60px; }
@@ -83,17 +84,34 @@
 
       .vuln-card { position: relative; }
     </style>
+    {% endif %}
   </head>
-  <body>
+  <body class="{{ '' if pdf_mode else 'report-page' }}">
 
     <div class="report-container">
+      {% if not pdf_mode %}
+        <div class="window-bar">
+          <span class="window-dot r"></span>
+          <span class="window-dot y"></span>
+          <span class="window-dot g"></span>
+          <span class="window-title">WebVulnScan</span>
+        </div>
+      {% endif %}
 
+      <div class="{{ '' if pdf_mode else 'page-panel' }}">
       <div class="report-header">
-        <div class="brand">
-          <div class="logo"></div>
-          <div>
-            <h1>Scan Report</h1>
-            <p class="subtitle">{{ target_url }}</p>
+        <div class="hero-strip">
+          <div class="hero-copy">
+            <div class="brand">
+              <div class="logo"></div>
+              <div>
+                <h1>Scan Report</h1>
+                <p class="subtitle">{{ target_url }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="hero-side">
+            <span class="mono-pill soft">{{ target_url }}</span>
           </div>
         </div>
 
@@ -370,12 +388,13 @@
       </div>
 
       {% if not pdf_mode %}
-        <div style="display:flex;gap:12px;margin-top:24px">
+        <div class="report-actions">
           <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
           <a href="/" class="back-link">← New Scan</a>
         </div>
       {% endif %}
 
+      </div>
     </div>
 
     <script>
