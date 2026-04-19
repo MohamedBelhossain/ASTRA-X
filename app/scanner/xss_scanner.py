@@ -2,24 +2,7 @@ import requests
 from urllib.parse import urljoin
 from app.form_parser import get_forms
 from functools import lru_cache
-
-XSS_PAYLOADS = [
-    '<script>alert("xss")</script>',
-    '"><script>alert("xss")</script>',
-    "'><script>alert('xss')</script>",
-    '<img src=x onerror=alert("xss")>',
-    '"><img src=x onerror=alert("xss")>',
-    '<svg onload=alert("xss")>',
-    'javascript:alert("xss")',
-    '"><svg onload=alert("xss")>',
-]
-
-DOM_PAYLOADS = [
-    '#<script>alert("xss")</script>',
-    '#"><img src=x onerror=alert("xss")>',
-    '#<svg onload=alert("xss")>',
-]
-
+from app.scanner.payloads import XSS_PAYLOADS, XSS_DOM_PAYLOADS as DOM_PAYLOADS
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",

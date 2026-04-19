@@ -2,46 +2,16 @@
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
-
-SENSITIVE_PATHS = [
-    "/.env", "/.env.local", "/.env.backup",
-    "/config.php", "/config.yml", "/config.json",
-    "/settings.py", "/settings.php",
-    "/database.yml", "/db.php",
-
-    "/admin", "/admin/", "/admin.php",
-    "/administrator", "/phpmyadmin", "/wp-admin",
-
-    "/backup.zip", "/backup.sql", "/backup.tar.gz",
-
-    "/.git/config", "/.git/HEAD",
-    "/.htaccess", "/.htpasswd",
-
-    "/error.log", "/debug.log", "/php_errors.log",
-    "/phpinfo.php", "/info.php",
-
-    "/robots.txt", "/sitemap.xml",
-    "/README.md", "/LICENSE",
-]
+from app.scanner.payloads import SENSITIVE_PATHS, FILE_FALSE_POSITIVE_KEYWORDS as keywords
 
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0"
 })
-
-
 def is_false_positive(response):
     """Detect fake 200 responses"""
     text = response.text.lower()
-
-    keywords = [
-        "not found",
-        "404",
-        "page not found",
-        "error 404",
-        "does not exist"
-    ]
-
+    
     if any(k in text for k in keywords):
         return True
 
