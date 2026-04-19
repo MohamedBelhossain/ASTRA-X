@@ -282,6 +282,75 @@
       margin-top: 12px;
     }
     .err-banner.show { display: block; }
+
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .mode-option {
+      position: relative;
+    }
+    .mode-option input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .mode-card {
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      background: rgba(255,255,255,.02);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .15s;
+      display: block;
+    }
+    .mode-card:hover {
+      border-color: #3a3a3a;
+      background: rgba(255,255,255,.04);
+      transform: translateY(-1px);
+    }
+    .mode-option input:checked + .mode-card {
+      border-color: #00cc66;
+      background: rgba(0,255,120,.08);
+      box-shadow: 0 0 0 1px rgba(0,255,120,.18);
+    }
+    .mode-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: .85rem;
+      font-weight: 700;
+      color: #ddd;
+      margin-bottom: 6px;
+    }
+    .mode-badge {
+      font-size: .62rem;
+      color: #00cc66;
+      border: 1px solid rgba(0,255,120,.22);
+      border-radius: 999px;
+      padding: 2px 7px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .mode-copy {
+      font-size: .75rem;
+      line-height: 1.5;
+      color: #777;
+    }
+    .phase-item.skipped .phase-icon {
+      border-color: #505050;
+      color: #888;
+      background: rgba(255,255,255,.03);
+    }
+    .phase-item.skipped .phase-label {
+      color: #666;
+    }
+    .phase-item.skipped .phase-count {
+      color: #888;
+      border-color: #333;
+      background: #141414;
+    }
   </style>
 </head>
 
@@ -316,6 +385,25 @@
             <div class="field-row">
               <label>Target URL</label>
               <input id="url-input" type="text" name="url" placeholder="https://example.com" required>
+            </div>
+            <div class="field-row">
+              <label>Scan Mode</label>
+              <div class="mode-grid">
+                <div class="mode-option">
+                  <input id="mode-fast" type="radio" name="scan_mode" value="fast">
+                  <label class="mode-card" for="mode-fast">
+                    <span class="mode-title">Fast Scan <span class="mode-badge">Quick</span></span>
+                    <span class="mode-copy">Runs the quickest core checks: port scan, crawl, SQLi, and XSS.</span>
+                  </label>
+                </div>
+                <div class="mode-option">
+                  <input id="mode-deep" type="radio" name="scan_mode" value="deep" checked>
+                  <label class="mode-card" for="mode-deep">
+                    <span class="mode-title">Deep Scan <span class="mode-badge">Full</span></span>
+                    <span class="mode-copy">Runs all features including LFI, file exposure, and subdomain checks.</span>
+                  </label>
+                </div>
+              </div>
             </div>
             <button type="submit" id="scan-btn">
               <span id="btn-text">Start Scan</span>
@@ -424,6 +512,7 @@
   const form      = document.getElementById("scan-form");
   const overlay   = document.getElementById("progress-overlay");
   const urlInput  = document.getElementById("url-input");
+  const modeInput = () => form.querySelector('input[name="scan_mode"]:checked');
   const scanBtn   = document.getElementById("scan-btn");
   const btnText   = document.getElementById("btn-text");
   const btnSpin   = document.getElementById("btn-spinner");
@@ -483,12 +572,14 @@
       el.classList.add("running");
       const pct = PHASE_PCT[name] || 50;
       setProgress(pct, `Running ${el.querySelector(".phase-label").textContent}…`);
+    } else if (status === "skipped") {
+      el.classList.add("skipped");
     } else if (status === "done") {
       el.classList.add(count > 0 && ["sqli","xss","lfi"].includes(name) ? "vuln-found" : "done");
     }
 
     if (count !== undefined && cnt) {
-      cnt.textContent = count;
+      cnt.textContent = status === "skipped" ? "skip" : count;
     }
   }
 
@@ -567,6 +658,7 @@
     errBanner.classList.remove("show");
 
     const target = urlInput.value.trim();
+    const selectedMode = modeInput()?.value || "deep";
     if (!target) return;
 
     btnText.textContent = "Validating…";
@@ -576,6 +668,7 @@
 
     const formData = new FormData();
     formData.append("url", target);
+    formData.append("scan_mode", selectedMode);
 
     let scanId;
     try {
@@ -586,7 +679,7 @@
         throw new Error(data.error || "Failed to start scan.");
       }
       scanId = data.scan_id;
-      ovTarget.textContent = data.target;
+      ovTarget.textContent = `${data.target} • ${data.scan_mode}`;
     } catch (err) {
       errBanner.textContent = err.message;
       errBanner.classList.add("show");
