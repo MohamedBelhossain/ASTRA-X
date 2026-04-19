@@ -1,7 +1,8 @@
+
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
-from .models import db, User
+from .models import User
 
 bcrypt = Bcrypt()
 auth = Blueprint("auth", __name__)
@@ -21,18 +22,16 @@ def register():
             flash("All fields are required.", "danger")
             return redirect(url_for("auth.register"))
 
-        if User.query.filter_by(email=email).first():
+        if User.find_by_email(email):
             flash("Email already registered.", "danger")
             return redirect(url_for("auth.register"))
 
-        if User.query.filter_by(username=username).first():
+        if User.find_by_username(username):
             flash("Username already taken.", "danger")
             return redirect(url_for("auth.register"))
 
         hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
-        new_user  = User(username=username, email=email, password=hashed_pw)
-        db.session.add(new_user)
-        db.session.commit()
+        User.create(username=username, email=email, hashed_password=hashed_pw)
 
         flash("Account created! Please log in.", "success")
         return redirect(url_for("auth.login"))
@@ -48,7 +47,7 @@ def login():
     if request.method == "POST":
         email    = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
-        user     = User.query.filter_by(email=email).first()
+        user     = User.find_by_email(email)
 
         if not user or not bcrypt.check_password_hash(user.password, password):
             flash("Invalid email or password.", "danger")

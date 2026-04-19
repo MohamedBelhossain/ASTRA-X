@@ -91,13 +91,14 @@ def scan_subdomains(base_url, max_workers=20):
 
     # strip www if present
     domain = hostname.replace("www.", "")
+    candidates = sorted(set(SUBDOMAINS))
 
     findings = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(_check_subdomain, sub, domain, scheme): sub
-            for sub in SUBDOMAINS
+            for sub in candidates
         }
         for future in as_completed(futures):
             result = future.result()

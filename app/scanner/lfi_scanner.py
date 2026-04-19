@@ -28,12 +28,16 @@ PAYLOADS = [
 
 
 COMMON_PARAMS = [
-    "file", "page", "include", "path", "template", "view",
-    "doc", "document", "folder", "root", "pg", "style",
-    "pdf", "layout", "conf", "lang", "locale", "module",
-    "content", "dir", "load",
-      # trimmed to top 8 most commonly exploited
+    "file", "page", "include", "path",
+    "template", "view", "doc", "folder",
 ]
+
+REQUEST_TIMEOUT = 3
+
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+})
 
 def inject_payload(url, param, payload):
     parsed = urlparse(url)
@@ -43,11 +47,11 @@ def inject_payload(url, param, payload):
     return urlunparse(parsed._replace(query=new_query))
 
 def generate_variants(original, payload):
-    return [
+    return list(dict.fromkeys([
         payload,
         original + payload,
         payload + original,
-    ]
+    ]))
 
 #
 def detect_lfi(response):
@@ -68,16 +72,21 @@ def scan_lfi(url):
     found = set()
 
     parsed = urlparse(url)
-    existing_params = list(parse_qs(parsed.query).keys())
+    query_params = parse_qs(parsed.query)
+    existing_params = list(query_params.keys())
 
-    all_params = list(set(existing_params + COMMON_PARAMS))
+    if existing_params:
+        all_params = list(dict.fromkeys(existing_params + COMMON_PARAMS))
+    else:
+        all_params = COMMON_PARAMS[:4]
 
     for param in all_params:
-        original_value = parse_qs(parsed.query).get(param, [""])[0]
+        original_value = query_params.get(param, [""])[0]
 
         if any(s in param.lower() for s in ["file", "path", "page", "include"]):
             print(f"  [!] High value parameter: {param}")
 
+        detected = False
         for payload in PAYLOADS:
             variants = generate_variants(original_value, payload)
 
@@ -88,7 +97,7 @@ def scan_lfi(url):
 
                 test_url = inject_payload(url, param, variant)
                 try:
-                    response = requests.get(test_url, timeout=5)
+                    response = session.get(test_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
                     detection = detect_lfi(response)
 
                     if detection:
@@ -102,10 +111,14 @@ def scan_lfi(url):
                             "confidence": "high"
                         })
                         print(f"  [VULN] LFI → param='{param}' | {detection}")
+                        detected = True
                         break
 
                 except requests.exceptions.RequestException:
                     continue
+
+            if detected:
+                break
 
     print(f"  [LFI] Found {len(results)} vulnerability(ies).")
     return results
