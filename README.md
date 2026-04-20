@@ -38,22 +38,34 @@ app/
   templates/            Landing, auth, dashboard, report, error pages
   static/               Shared CSS
   scanner/              Scanning modules
-  .env                  Local environment variables
 Dockerfile
 docker-compose.yml
 requirements.txt
 README.md
+.env                   Local environment variables
+.env.example           Example environment variables
 ```
 
 ## Environment Variables
 
-The app loads environment variables from `app/.env`.
+The app loads environment variables from `.env` at the project root.
 
 Minimum required values:
 
 ```env
 SECRET_KEY=replace_with_a_random_secret
 MONGO_URI=mongodb://localhost:27017/webvuln
+```
+
+To enable email verification and password reset, also configure:
+
+```env
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your_email@gmail.com
+MAIL_PASSWORD=your_16char_app_password
+MAIL_DEFAULT_SENDER=your_email@gmail.com
 ```
 
 Notes:
@@ -91,16 +103,22 @@ pip install -r requirements.txt
 
 ### 4. Configure environment variables
 
-Edit `app/.env`:
+Create `.env` from `.env.example` and edit it:
 
 ```env
 SECRET_KEY=replace_with_a_random_secret
 MONGO_URI=mongodb://localhost:27017/webvuln
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your_email@gmail.com
+MAIL_PASSWORD=your_16char_app_password
+MAIL_DEFAULT_SENDER=your_email@gmail.com
 ```
 
 ### 5. Start MongoDB
 
-Make sure MongoDB is running locally, or use a remote MongoDB URI in `app/.env`.
+Make sure MongoDB is running locally, or use a remote MongoDB URI in `.env`.
 
 ### 6. Run the app
 

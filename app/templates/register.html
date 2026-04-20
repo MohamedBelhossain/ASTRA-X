@@ -30,27 +30,39 @@
         {% endfor %}
       {% endwith %}
 
-      <form action="/register" method="POST" class="form-stack">
+      <p style="font-size:13px; color:#aaa; margin-bottom:16px;">
+        Create your account, then confirm it with the 6-digit email code.
+      </p>
+      <form action="{{ url_for('auth.register') }}" method="POST" class="form-stack">
         <div class="field-row">
           <label>Username</label>
-          <input type="text" name="username" placeholder="yourname" required>
+          <input type="text" name="username" placeholder="yourname"
+                 value="{{ form_data.username if form_data else '' }}" required>
         </div>
 
         <div class="field-row">
           <label>Email</label>
-          <input type="email" name="email" placeholder="you@example.com" required>
+          <input type="email" name="email" placeholder="you@example.com"
+                 value="{{ form_data.email if form_data else '' }}" required>
         </div>
 
         <div class="field-row">
           <label>Password</label>
-          <input type="password" name="password" placeholder="••••••••" required>
+          <input type="password" name="password" placeholder="••••••••"
+                 minlength="6" required>
+        </div>
+
+        <div class="field-row">
+          <label>Confirm Password</label>
+          <input type="password" name="confirm_password" placeholder="••••••••"
+                 minlength="6" required>
         </div>
 
         <button type="submit">Create Account</button>
       </form>
 
       <div class="footer">
-        Already have an account? <a href="/login">Login</a>
+        Already have an account? <a href="{{ url_for('auth.login') }}">Login</a>
       </div>
     </div>
   </section>

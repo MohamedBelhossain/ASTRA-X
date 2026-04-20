@@ -29,18 +29,27 @@
         {% endfor %}
       {% endwith %}
       <p style="font-size:13px; color:#aaa; margin-bottom:16px;">
-        Enter the 6-digit code sent to your email.
+        Enter the 6-digit code sent to <strong>{{ pending_email }}</strong>.
       </p>
-      <form action="/verify" method="POST" class="form-stack">
+      {% if code_expired %}
+        <div class="alert alert-warning">Your last code expired. Request a new code and then try again.</div>
+      {% endif %}
+      <form action="{{ url_for('auth.verify_email') }}" method="POST" class="form-stack">
         <div class="field-row">
           <label>Verification Code</label>
           <input type="text" name="code" placeholder="123456"
-                 maxlength="6" autocomplete="off" required
+                 value="{{ code_value }}"
+                 maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required
                  style="letter-spacing:8px; font-size:22px; text-align:center;">
         </div>
         <button type="submit">Verify Email</button>
       </form>
-      <div class="footer"><a href="/register">← Back to Register</a></div>
+      <form action="{{ url_for('auth.resend_verification_code') }}" method="POST" class="form-stack">
+        <button type="submit">Resend Code</button>
+      </form>
+      <div class="footer">
+        <a href="{{ url_for('auth.register') }}">← Back to Register</a>
+      </div>
     </div>
   </section>
 </div>

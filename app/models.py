@@ -1,13 +1,14 @@
-from flask_pymongo import PyMongo
-from flask_login import UserMixin
+from datetime import datetime, timedelta
+
 from bson import ObjectId
-from datetime import datetime
+from flask_login import UserMixin
+from flask_pymongo import PyMongo
 
 mongo = PyMongo()
 
 
 class User(UserMixin):
-
+    
     def __init__(self, doc):
         self._doc = doc
 
@@ -96,39 +97,34 @@ class ResetToken:
 
     @classmethod
     def create(cls, email, code):
-        # احذف الكودات القديمة لنفس الإيميل
         cls._col().delete_many({"email": email})
+        now = datetime.utcnow()
         cls._col().insert_one({
             "email":      email,
             "code":       code,
             "used":       False,
-            "expires_at": datetime.utcnow().__class__(
-                *datetime.utcnow().timetuple()[:6]
-            )
-        })
-        # نستخدم insert مباشرة
-        cls._col().delete_many({"email": email})
-        cls._col().insert_one({
-            "email":      email,
-            "code":       code,
-            "used":       False,
-            "created_at": datetime.utcnow()
+            "created_at": now,
+            "expires_at": now + timedelta(minutes=10),
         })
 
     @classmethod
     def find_valid(cls, email, code):
-        from datetime import timedelta
         doc = cls._col().find_one({
             "email": email,
             "code":  code,
-            "used":  False
+            "used":  False,
         })
         if not doc:
             return None
-        # تحقق من انتهاء الصلاحية (10 دقائق)
-        from datetime import timedelta
-        if (datetime.utcnow() - doc["created_at"]).total_seconds() > 600:
+
+        expires_at = doc.get("expires_at")
+        if expires_at and expires_at <= datetime.utcnow():
             return None
+
+        created_at = doc.get("created_at")
+        if created_at and (datetime.utcnow() - created_at).total_seconds() > 600:
+            return None
+
         return doc
 
     @classmethod
@@ -137,3 +133,8 @@ class ResetToken:
             {"email": email, "code": code},
             {"$set": {"used": True}}
         )
+
+    @classmethod
+    def ensure_indexes(cls):
+        cls._col().create_index("email")
+        cls._col().create_index("expires_at")

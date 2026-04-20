@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mongo:
     image: mongo:7
@@ -15,8 +13,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      MONGO_URI: "mongodb://mongo:27017/webvuln"
-      SECRET_KEY: "CHANGE-THIS-IN-PRODUCTION"
+      MONGO_URI: "mongodb+srv://anasamechaibou_db_user:QW3S4QeWJZW2eTbX@cluster0.fsrducb.mongodb.net/?appName=Cluster0"
+      SECRET_KEY: "d6a1f72690bc4d2980827b4ca1d5c272a49b4efa7ec0941f68532f933d029246"
+      MAIL_SERVER: "smtp.gmail.com"
+      MAIL_PORT: "587"
+      MAIL_USE_TLS: "true"
+      MAIL_USERNAME: "anasame28@gmail.com"
+      MAIL_PASSWORD: "zniqzfbvisbntvzd"
+      MAIL_DEFAULT_SENDER: "anasame28@gmail.com"
     depends_on:
       - mongo
 

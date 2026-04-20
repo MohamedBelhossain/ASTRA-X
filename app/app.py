@@ -14,9 +14,7 @@ from flask_login import LoginManager, login_required, current_user
 from weasyprint import HTML
 import requests as req
 from dotenv import load_dotenv
-
-from app.models import mongo, User
-from app.auth import auth, bcrypt
+from app.models import ResetToken, User, mongo
 from app.scanner.analyser import analyse_nmap
 from app.scanner.file_exposure import scan_file_exposure
 from app.scanner.nmap import run_nmap
@@ -28,20 +26,25 @@ from app.scanner.subdomain_scanner import scan_subdomains
 
 app = Flask(__name__)
 
-ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(ENV_PATH)
+APP_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.dirname(APP_DIR)
+ROOT_ENV_PATH = os.path.join(ROOT_DIR, ".env")
+APP_ENV_PATH = os.path.join(APP_DIR, ".env")
+load_dotenv(ROOT_ENV_PATH)
+load_dotenv(APP_ENV_PATH, override=True)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY", "dev-secret-key-change-me"),
-    MONGO_URI=os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln"),
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
+app.config["MONGO_URI"] = os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln")
+app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
+app.config["MAIL_USE_TLS"] = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "your_email@gmail.com")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "your_16char_app_password")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get(
+    "MAIL_DEFAULT_SENDER",
+    app.config["MAIL_USERNAME"],
 )
-app.config["MAIL_SERVER"]         = "smtp.gmail.com"
-app.config["MAIL_PORT"]           = 587
-app.config["MAIL_USE_TLS"]        = True
-app.config["MAIL_USERNAME"]       = "your_email@gmail.com"
-app.config["MAIL_PASSWORD"]       = "your_16char_app_password"
-app.config["MAIL_DEFAULT_SENDER"] = "your_email@gmail.com"
 # ── Extensions ────────────────────────────────────────────────────────────────
 mongo.init_app(app)
 bcrypt.init_app(app)
@@ -62,8 +65,15 @@ def load_user(user_id):
 
 
 # ── Ensure MongoDB indexes on first request ───────────────────────────────────
-with app.app_context():
-    User.ensure_indexes()
+@app.before_request
+def _ensure_indexes():
+    if not getattr(app, '_indexes_created', False):
+        try:
+            User.ensure_indexes()
+            ResetToken.ensure_indexes()
+            app._indexes_created = True
+        except Exception as e:
+            app.logger.warning(f"Could not create indexes: {e}")
 
 # ── In-memory scan state (unchanged) ─────────────────────────────────────────
 scan_store  = {}
