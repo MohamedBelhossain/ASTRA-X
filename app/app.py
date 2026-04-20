@@ -14,8 +14,8 @@ from weasyprint import HTML
 import requests as req
 from dotenv import load_dotenv
 
-from app.models import mongo, User
-from app.auth import auth, bcrypt
+from app.auth import auth, bcrypt, mail
+from app.models import ResetToken, User, mongo
 from app.scanner.analyser import analyse_nmap
 from app.scanner.file_exposure import scan_file_exposure
 from app.scanner.nmap import run_nmap
@@ -28,18 +28,33 @@ from app.scanner.bruteforce_scanner import scan_bruteforce
 
 app = Flask(__name__)
 
-ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(ENV_PATH)
+APP_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.dirname(APP_DIR)
+ROOT_ENV_PATH = os.path.join(ROOT_DIR, ".env")
+APP_ENV_PATH = os.path.join(APP_DIR, ".env")
+load_dotenv(ROOT_ENV_PATH)
+load_dotenv(APP_ENV_PATH, override=False)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY", "dev-secret-key-change-me"),
     MONGO_URI=os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln"),
+    MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp.gmail.com"),
+    MAIL_PORT=int(os.environ.get("MAIL_PORT", 587)),
+    MAIL_USE_TLS=os.environ.get("MAIL_USE_TLS", "true").lower() == "true",
+    MAIL_USERNAME=os.environ.get("MAIL_USERNAME", "your_email@gmail.com"),
+    MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", "your_16char_app_password"),
+    MAIL_DEFAULT_SENDER=os.environ.get(
+        "MAIL_DEFAULT_SENDER",
+        os.environ.get("MAIL_USERNAME", "your_email@gmail.com"),
+    ),
+    MAIL_CONSOLE_FALLBACK=os.environ.get("MAIL_CONSOLE_FALLBACK", "false").lower() == "true",
 )
 
 # ── Extensions ────────────────────────────────────────────────────────────────
 mongo.init_app(app)
 bcrypt.init_app(app)
+mail.init_app(app)
 app.register_blueprint(auth)
 
 # ── Flask-Login ───────────────────────────────────────────────────────────────
@@ -56,8 +71,17 @@ def load_user(user_id):
 
 
 # ── Ensure MongoDB indexes on first request ───────────────────────────────────
-with app.app_context():
-    User.ensure_indexes()
+@app.before_request
+def _ensure_indexes():
+    if getattr(app, "_indexes_created", False):
+        return
+
+    try:
+        User.ensure_indexes()
+        ResetToken.ensure_indexes()
+        app._indexes_created = True
+    except Exception as exc:
+        app.logger.warning("Could not create indexes: %s", exc)
 
 # ── In-memory scan state (unchanged) ─────────────────────────────────────────
 scan_store  = {}

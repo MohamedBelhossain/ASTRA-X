@@ -1,7 +1,9 @@
-from flask_pymongo import PyMongo
-from flask_login import UserMixin
-from bson import ObjectId
 import time
+from datetime import datetime, timedelta
+
+from bson import ObjectId
+from flask_login import UserMixin
+from flask_pymongo import PyMongo
 
 mongo = PyMongo()
 
@@ -32,6 +34,10 @@ class User(UserMixin):
     @property
     def password(self):
         return self._doc.get("password", "")
+
+    @property
+    def is_verified(self):
+        return self._doc.get("is_verified", False)
 
     @property
     def recent_scan_starts(self):
@@ -69,6 +75,7 @@ class User(UserMixin):
                 "username": username,
                 "email": email,
                 "password": hashed_password,
+                "is_verified": False,
                 "recent_scan_starts": [],
                 "created_at": time.time(),
             }
@@ -110,6 +117,20 @@ class User(UserMixin):
         }
 
     @classmethod
+    def set_verified(cls, email):
+        cls._col().update_one(
+            {"email": email},
+            {"$set": {"is_verified": True}},
+        )
+
+    @classmethod
+    def update_password(cls, email, hashed_password):
+        cls._col().update_one(
+            {"email": email},
+            {"$set": {"password": hashed_password}},
+        )
+
+    @classmethod
     def get_scan_quota_status(cls, user_id, window_seconds, max_scans, now=None):
         now = float(now or time.time())
         user = cls.find_by_id(user_id)
@@ -143,3 +164,59 @@ class User(UserMixin):
     def ensure_indexes(cls):
         cls._col().create_index("email",    unique=True)
         cls._col().create_index("username", unique=True)
+
+
+class ResetToken:
+    """Password reset codes stored in MongoDB."""
+
+    @classmethod
+    def _col(cls):
+        return mongo.db.reset_tokens
+
+    @classmethod
+    def create(cls, email, code):
+        cls._col().delete_many({"email": email})
+        now = datetime.utcnow()
+        cls._col().insert_one(
+            {
+                "email": email,
+                "code": code,
+                "used": False,
+                "created_at": now,
+                "expires_at": now + timedelta(minutes=10),
+            }
+        )
+
+    @classmethod
+    def find_valid(cls, email, code):
+        doc = cls._col().find_one(
+            {
+                "email": email,
+                "code": code,
+                "used": False,
+            }
+        )
+        if not doc:
+            return None
+
+        expires_at = doc.get("expires_at")
+        if expires_at and expires_at <= datetime.utcnow():
+            return None
+
+        created_at = doc.get("created_at")
+        if created_at and (datetime.utcnow() - created_at).total_seconds() > 600:
+            return None
+
+        return doc
+
+    @classmethod
+    def mark_used(cls, email, code):
+        cls._col().update_one(
+            {"email": email, "code": code},
+            {"$set": {"used": True}},
+        )
+
+    @classmethod
+    def ensure_indexes(cls):
+        cls._col().create_index("email")
+        cls._col().create_index("expires_at")
