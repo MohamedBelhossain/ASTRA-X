@@ -136,6 +136,10 @@
             <span class="summary-num">{{ lfi_vulnerabilities | length }}</span>
             <span class="summary-label">LFI Found</span>
           </div>
+          <div class="summary-badge {{ 'badge-danger' if bruteforce_result.credentials_found else 'badge-safe' }}">
+            <span class="summary-num">{{ bruteforce_result.credentials_found | length }}</span>
+            <span class="summary-label">Credentials Found</span>
+          </div>
           <div class="summary-badge {{ 'badge-danger' if file_findings else 'badge-safe' }}">
             <span class="summary-num">{{ file_findings | length }}</span>
             <span class="summary-label">Exposed Files</span>
@@ -355,6 +359,70 @@
           {% endfor %}
         {% else %}
           <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No LFI vulnerabilities found.</p></div>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <h3>Authentication / Brute Force</h3>
+        {% if bruteforce_result.rate_limit_probe and bruteforce_result.rate_limit_probe.tested %}
+          <div class="vuln-card {{ 'vuln-medium' if bruteforce_result.rate_limit_probe.blocked else 'vuln-low' }}">
+            <div class="vuln-header">
+              <span class="vuln-type">Request Threshold / Rate Limit Probe</span>
+              <span class="severity-badge {{ 'sev-medium' if bruteforce_result.rate_limit_probe.blocked else 'sev-low' }}">
+                {{ 'LIMITED' if bruteforce_result.rate_limit_probe.blocked else 'NO EXPLICIT LIMIT' }}
+              </span>
+            </div>
+            <div class="vuln-body">
+              <p><span class="vuln-key">Requests Sent</span><span class="vuln-val">{{ bruteforce_result.rate_limit_probe.requests_sent }}</span></p>
+              <p><span class="vuln-key">Allowed Before Block</span><span class="vuln-val">{{ bruteforce_result.rate_limit_probe.allowed_before_block }}</span></p>
+              <p><span class="vuln-key">Average Response</span><span class="vuln-val">{{ bruteforce_result.rate_limit_probe.average_response_ms or "—" }} ms</span></p>
+              {% if bruteforce_result.rate_limit_probe.blocked %}
+              <p><span class="vuln-key">Block Response</span><span class="vuln-val">HTTP {{ bruteforce_result.rate_limit_probe.block_status }} at request {{ bruteforce_result.rate_limit_probe.blocked_at_request }}</span></p>
+              {% else %}
+              <p><span class="vuln-key">Result</span><span class="vuln-val">No explicit rate-limit block was observed during the rapid-request probe.</span></p>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+        {% if bruteforce_result.waf_detected %}
+          <div class="vuln-card vuln-medium">
+            <div class="vuln-header">
+              <span class="vuln-type">WAF Protection Detected</span>
+              <span class="severity-badge sev-medium">MEDIUM</span>
+            </div>
+            <div class="vuln-body">
+              <p><span class="vuln-key">Status</span><span class="vuln-val">Brute-force validation was skipped because the target appears protected.</span></p>
+              {% if bruteforce_result.waf_detail %}
+              <p><span class="vuln-key">Detail</span><span class="vuln-val">{{ bruteforce_result.waf_detail }}</span></p>
+              {% endif %}
+              {% if bruteforce_result.blocked_payloads %}
+              <p><span class="vuln-key">Blocked Payloads</span><span class="vuln-val">{{ bruteforce_result.blocked_payloads | join(", ") }}</span></p>
+              {% endif %}
+            </div>
+          </div>
+        {% elif bruteforce_result.credentials_found %}
+          {% for finding in bruteforce_result.credentials_found %}
+            <div class="vuln-card vuln-critical">
+              <div class="vuln-header">
+                <span class="vuln-type">Valid Credentials Discovered</span>
+                <span class="severity-badge sev-critical">CRITICAL</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">Login URL</span><span class="vuln-val">{{ finding.login_url or finding.url }}</span></p>
+                <p><span class="vuln-key">Username</span><span class="vuln-val">{{ finding.username }}</span></p>
+                <p><span class="vuln-key">Password</span><code class="vuln-code">{{ finding.password }}</code></p>
+                <p><span class="vuln-key">HTTP Status</span><span class="vuln-val">{{ finding.status_code or "—" }}</span></p>
+                {% if finding.redirect %}
+                <p><span class="vuln-key">Redirect</span><span class="vuln-val">{{ finding.redirect }}</span></p>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+          <p class="muted">Checked {{ bruteforce_result.login_forms }} login form(s) across {{ bruteforce_result.candidate_pages }} candidate page(s) with {{ bruteforce_result.attempts }} request(s).</p>
+        {% elif bruteforce_result.login_forms %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>{{ bruteforce_result.login_forms }} login form(s) were tested with {{ bruteforce_result.attempts }} credential attempt(s), and no valid credentials were found.</p></div>
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No login forms were discovered for brute-force testing across {{ bruteforce_result.candidate_pages }} candidate page(s). This no longer means the site had no forms overall, only that no authentication form matched the updated detector.</p></div>
         {% endif %}
       </div>
 

@@ -134,6 +134,7 @@
     .finding-item.sqli  { border-left-color: #ff3c3c; }
     .finding-item.xss   { border-left-color: #ff8c00; }
     .finding-item.lfi   { border-left-color: #b040ff; }
+    .finding-item.bruteforce { border-left-color: #ff5c8a; }
     .finding-name {
       font-size: .73rem; font-weight: 600; color: #ccc;
       display: flex; align-items: center; gap: 5px;
@@ -149,6 +150,7 @@
     .tag.sqli { background: rgba(255,60,60,.15);  color: #ff6060; }
     .tag.xss  { background: rgba(255,140,0,.15);  color: #ffa040; }
     .tag.lfi  { background: rgba(180,0,255,.15);  color: #c060ff; }
+    .tag.bruteforce { background: rgba(255,92,138,.14); color: #ff7aa5; }
     .no-findings { padding: 12px 16px; font-size: .73rem; color: #333; }
 
     /* ── Right: terminal + detail panel ───────────────────── */
@@ -371,7 +373,7 @@
             <div class="logo"></div>
             <div>
               <h1>WebVulnScan</h1>
-              <div class="subtitle">Ports · SQLi · XSS · LFI · Files · Subdomains</div>
+              <div class="subtitle">Ports · SQLi · XSS · LFI · Brute Force · Files · Subdomains</div>
             </div>
           </div>
         </div>
@@ -379,6 +381,24 @@
           <div class="scan-actions">
             <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
             <a href="/logout" class="back-link">Logout</a>
+          </div>
+
+          <div class="field-row" style="margin-bottom:14px;">
+            <label>Scan Quota</label>
+            <div class="mode-card" style="cursor:default;">
+              <div class="mode-title">
+                <span>{{ scan_quota.remaining }} / {{ scan_quota.limit }} scans left</span>
+                <span class="mode-badge">{{ scan_quota.active_scans }}/{{ scan_quota.max_active_scans }} active</span>
+              </div>
+              <div class="mode-copy">
+                Per-user limit: {{ scan_quota.limit }} scan(s) every {{ scan_quota.window_seconds // 60 }} minute(s).
+                {% if scan_quota.used %}
+                  Window resets in about {{ scan_quota.reset_in }}s.
+                {% else %}
+                  Your quota window is currently clear.
+                {% endif %}
+              </div>
+            </div>
           </div>
 
           <form id="scan-form" class="form-stack">
@@ -400,7 +420,7 @@
                   <input id="mode-deep" type="radio" name="scan_mode" value="deep" checked>
                   <label class="mode-card" for="mode-deep">
                     <span class="mode-title">Deep Scan <span class="mode-badge">Full</span></span>
-                    <span class="mode-copy">Runs all features including LFI, file exposure, and subdomain checks.</span>
+                    <span class="mode-copy">Runs all features including LFI, brute-force, file exposure, and subdomain checks.</span>
                   </label>
                 </div>
               </div>
@@ -464,13 +484,18 @@
           <span class="phase-label">LFI / Path Traversal</span>
           <span class="phase-count" id="pc-lfi">—</span>
         </div>
-        <div class="phase-item" id="ph-files">
+        <div class="phase-item" id="ph-brute">
           <div class="phase-icon">6</div>
+          <span class="phase-label">Brute Force</span>
+          <span class="phase-count" id="pc-brute">—</span>
+        </div>
+        <div class="phase-item" id="ph-files">
+          <div class="phase-icon">7</div>
           <span class="phase-label">File Exposure</span>
           <span class="phase-count" id="pc-files">—</span>
         </div>
         <div class="phase-item" id="ph-subd">
-          <div class="phase-icon">7</div>
+          <div class="phase-icon">8</div>
           <span class="phase-label">Subdomains</span>
           <span class="phase-count" id="pc-subd">—</span>
         </div>
@@ -526,7 +551,7 @@
   const noFinds   = document.getElementById("no-findings");
   const detPanel  = document.getElementById("detail-panel");
 
-  const PHASE_PCT = { nmap:12, crawl:22, sqli:55, xss:70, lfi:80, files:90, subd:96 };
+  const PHASE_PCT = { nmap:10, crawl:20, sqli:45, xss:60, lfi:72, brute:82, files:90, subd:96 };
   let scanStart = 0;
   let activeItem = null;
 
@@ -575,7 +600,7 @@
     } else if (status === "skipped") {
       el.classList.add("skipped");
     } else if (status === "done") {
-      el.classList.add(count > 0 && ["sqli","xss","lfi"].includes(name) ? "vuln-found" : "done");
+      el.classList.add(count > 0 && ["sqli","xss","lfi","bruteforce","brute"].includes(name) ? "vuln-found" : "done");
     }
 
     if (count !== undefined && cnt) {
@@ -606,10 +631,10 @@
     `;
 
     const reqData = {
-      method: "GET",
-      url: vuln.url,
-      param: vuln.parameter || vuln.param,
-      payload: vuln.payload,
+      method: vuln.method || "GET",
+      url: vuln.login_url || vuln.url,
+      param: vuln.parameter || vuln.param || (category === "bruteforce" ? "credentials" : undefined),
+      payload: vuln.payload || (category === "bruteforce" ? `${vuln.username} / ${vuln.password}` : undefined),
       type: vuln.type || category,
       category,
       severity: sev,
@@ -649,6 +674,7 @@
     if (cat === "lfi") return "critical";
     if (cat === "sqli") return type === "error-based" ? "critical" : "high";
     if (cat === "xss")  return type === "stored" ? "critical" : type === "reflected" ? "high" : "medium";
+    if (cat === "bruteforce") return "critical";
     return "medium";
   }
 
