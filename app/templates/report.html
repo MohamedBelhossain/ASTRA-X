@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Report — {{ target_url }}</title>
+    <link rel="stylesheet" href="{{ stylesheet_href }}">
+    {% if not pdf_mode %}
+    <style>
+      /* ── Report extras ─────────────────────────────────── */
+      .report-container { max-width: 1000px; margin: 0 auto; padding: 28px 20px 60px; }
+
+      /* Expandable details panel */
+      .vuln-details-panel {
+        display: none;
+        background: #0d0d0d;
+        border: 1px solid #1e1e1e;
+        border-radius: 8px;
+        margin-top: 10px;
+        padding: 14px 18px;
+        font-family: 'Courier New', monospace;
+        font-size: .8rem;
+        line-height: 1.8;
+      }
+      .vuln-details-panel.open { display: block; }
+      .detail-row { display: flex; gap: 14px; align-items: baseline; }
+      .detail-key {
+        color: #444;
+        min-width: 90px;
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+      }
+      .detail-val       { color: #aaa; word-break: break-all; }
+      .detail-val.method  { color: #00ff78; font-weight: 700; }
+      .detail-val.url     { color: #6ab4ff; }
+      .detail-val.param   { color: #c060ff; }
+      .detail-val.payload { color: #ff8c00; }
+      .detail-val.status-200 { color: #00ff78; }
+      .detail-val.status-403, .detail-val.status-401 { color: #ffd600; }
+      .detail-val.status-500 { color: #ff5050; }
+      .detail-sep { border: none; border-top: 1px solid #1a1a1a; margin: 8px 0; }
+
+      .detail-toggle {
+        background: none;
+        border: 1px solid #2a2a2a;
+        color: #555;
+        padding: 4px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: .72rem;
+        transition: all .15s;
+        margin-top: 8px;
+        font-family: monospace;
+      }
+      .detail-toggle:hover { border-color: var(--accent); color: var(--accent); }
+      .detail-toggle.open  { border-color: #333; color: #777; }
+
+      /* Page list collapsible */
+      .pages-list {
+        display: none;
+        background: #0d0d0d;
+        border: 1px solid #1e1e1e;
+        border-radius: 8px;
+        padding: 14px 18px;
+        font-family: monospace;
+        font-size: .8rem;
+        line-height: 1.8;
+        color: #6ab4ff;
+        margin-top: 10px;
+        max-height: 280px;
+        overflow-y: auto;
+      }
+      .pages-list.open { display: block; }
+      .page-url { display: block; margin: 2px 0; }
+      .page-url::before { content: "→ "; color: #333; }
+
+      /* Severity row in table */
+      .sev-high     { color: #ff8c00; font-weight: 600; }
+      .sev-critical { color: #ff3c3c; font-weight: 700; }
+      .sev-medium   { color: #ffd600; }
+      .sev-low      { color: #00bcd4; }
+      .sev-info     { color: #888; }
+
+      .vuln-card { position: relative; }
+    </style>
+    {% endif %}
+  </head>
+  <body class="{{ '' if pdf_mode else 'report-page' }}">
+
+    <div class="report-container">
+      {% if not pdf_mode %}
+        <div class="window-bar">
+          <span class="window-dot r"></span>
+          <span class="window-dot y"></span>
+          <span class="window-dot g"></span>
+          <span class="window-title">WebVulnScan</span>
+        </div>
+      {% endif %}
+
+      <div class="{{ '' if pdf_mode else 'page-panel' }}">
+      <div class="report-header">
+        <div class="hero-strip">
+          <div class="hero-copy">
+            <div class="brand">
+              <div class="logo"></div>
+              <div>
+                <h1>Scan Report</h1>
+                <p class="subtitle">{{ target_url }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="hero-side">
+            <span class="mono-pill soft">{{ target_url }}</span>
+          </div>
+        </div>
+
+        <div class="summary-row">
+          <div class="summary-badge">
+            <span class="summary-num">{{ pages_scanned }}</span>
+            <span class="summary-label">Pages Scanned</span>
+          </div>
+          <div class="summary-badge">
+            <span class="summary-num">{{ open_ports | length }}</span>
+            <span class="summary-label">Open Ports</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if vulnerabilities else 'badge-safe' }}">
+            <span class="summary-num">{{ vulnerabilities | length }}</span>
+            <span class="summary-label">SQLi Found</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if xss_vulnerabilities else 'badge-safe' }}">
+            <span class="summary-num">{{ xss_vulnerabilities | length }}</span>
+            <span class="summary-label">XSS Found</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if lfi_vulnerabilities else 'badge-safe' }}">
+            <span class="summary-num">{{ lfi_vulnerabilities | length }}</span>
+            <span class="summary-label">LFI Found</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if file_findings else 'badge-safe' }}">
+            <span class="summary-num">{{ file_findings | length }}</span>
+            <span class="summary-label">Exposed Files</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if subdomain_findings else 'badge-safe' }}">
+            <span class="summary-num">{{ subdomain_findings | length }}</span>
+            <span class="summary-label">Subdomains</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Open Ports ──────────────────────────────────── -->
+      <div class="section">
+        <h3>Open Ports</h3>
+        {% if open_ports %}
+          <table>
+            <thead>
+              <tr><th>Port</th><th>Protocol</th><th>Service</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for port in open_ports %}
+                <tr>
+                  <td><strong>{{ port.port }}</strong></td>
+                  <td>{{ port.protocol }}</td>
+                  <td>{{ port.service or '—' }}</td>
+                  <td class="port-status-{{ port.status }}">{{ port.status }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No open ports found.</p>
+        {% endif %}
+      </div>
+
+      <!-- ── Pages Scanned ──────────────────────────────── -->
+      <div class="section">
+        <h3>Pages Scanned</h3>
+        <p>{{ pages_scanned }} pages discovered during crawl.</p>
+        {% if pages %}
+          {% if not pdf_mode %}
+          <button class="detail-toggle" onclick="toggleEl('pages-list')">▶ Show all URLs</button>
+          <div class="pages-list" id="pages-list">
+            {% for p in pages %}
+              <a class="page-url" href="{{ p }}" target="_blank">{{ p }}</a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="muted">The full page list is available in the interactive report view.</p>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <!-- ── SQLi Results ───────────────────────────────── -->
+      <div class="section">
+        <h3>SQL Injection Results</h3>
+        {% if vulnerabilities %}
+          {% for vuln in vulnerabilities %}
+            {% if vuln.type == "error-based" %}{% set sev = "critical" %}
+            {% elif vuln.type in ["boolean-based","time-based"] %}{% set sev = "high" %}
+            {% elif vuln.type == "response-diff" %}{% set sev = "medium" %}
+            {% else %}{% set sev = "low" %}{% endif %}
+            {% set vid = "sqli-" ~ loop.index %}
+            <div class="vuln-card vuln-{{ sev }}">
+              <div class="vuln-header">
+                <span class="vuln-type">{{ vuln.type | replace("-"," ") | title }}</span>
+                <span class="severity-badge sev-{{ sev }}">{{ sev | upper }}</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
+                <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.parameter }}</span></p>
+                <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                {% if vuln.matched_error %}
+                  <p><span class="vuln-key">Matched Error</span><span class="vuln-val">{{ vuln.matched_error }}</span></p>
+                {% endif %}
+                {% if vuln.true_false_diff %}
+                  <p><span class="vuln-key">True/False Diff</span><span class="vuln-val">{{ vuln.true_false_diff }} bytes</span></p>
+                {% endif %}
+                {% if vuln.delay_seconds %}
+                  <p><span class="vuln-key">Delay</span><span class="vuln-val">{{ vuln.delay_seconds }}s</span></p>
+                {% endif %}
+                {% if not pdf_mode %}
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                {% endif %}
+              </div>
+              {% if not pdf_mode %}
+              <div class="vuln-details-panel" id="{{ vid }}">
+                <div class="detail-row">
+                  <span class="detail-key">METHOD</span>
+                  <span class="detail-val method">{{ "POST" if vuln.type in ["error-based", "boolean-based", "time-based", "response-diff"] else "GET" }}</span>
+                </div>
+                <hr class="detail-sep">
+                <div class="detail-row">
+                  <span class="detail-key">URL</span>
+                  <span class="detail-val url">{{ vuln.url }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">PARAMETER</span>
+                  <span class="detail-val param">{{ vuln.parameter }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">PAYLOAD</span>
+                  <span class="detail-val payload">{{ vuln.payload }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">TYPE</span>
+                  <span class="detail-val">{{ vuln.type | replace("-", " ") | title }}</span>
+                </div>
+                {% if vuln.matched_error %}
+                <div class="detail-row">
+                  <span class="detail-key">EVIDENCE</span>
+                  <span class="detail-val payload">{{ vuln.matched_error }}</span>
+                </div>
+                {% endif %}
+                {% if vuln.true_false_diff %}
+                <div class="detail-row">
+                  <span class="detail-key">DIFF</span>
+                  <span class="detail-val">{{ vuln.true_false_diff }} bytes between true/false responses</span>
+                </div>
+                {% endif %}
+                {% if vuln.delay_seconds %}
+                <div class="detail-row">
+                  <span class="detail-key">DELAY</span>
+                  <span class="detail-val">{{ vuln.delay_seconds }}s response delay detected</span>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No SQLi vulnerabilities found.</p></div>
+        {% endif %}
+      </div>
+
+      <!-- ── XSS Results ────────────────────────────────── -->
+      <div class="section">
+        <h3>XSS Findings</h3>
+        {% if xss_vulnerabilities %}
+          {% for vuln in xss_vulnerabilities %}
+            {% if vuln.type == "stored" %}{% set sev = "critical" %}
+            {% elif vuln.type == "reflected" %}{% set sev = "high" %}
+            {% else %}{% set sev = "medium" %}{% endif %}
+            {% set vid = "xss-" ~ loop.index %}
+            <div class="vuln-card vuln-{{ sev }}">
+              <div class="vuln-header">
+                <span class="vuln-type">{{ vuln.type | replace("-"," ") | title }} XSS</span>
+                <span class="severity-badge sev-{{ sev }}">{{ sev | upper }}</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
+                <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.parameter }}</span></p>
+                <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                {% if not pdf_mode %}
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                {% endif %}
+              </div>
+              {% if not pdf_mode %}
+              <div class="vuln-details-panel" id="{{ vid }}">
+                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">{{ "GET" if vuln.type == "dom-based" else "POST / GET" }}</span></div>
+                <hr class="detail-sep">
+                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ vuln.url }}</span></div>
+                <div class="detail-row"><span class="detail-key">PARAMETER</span><span class="detail-val param">{{ vuln.parameter }}</span></div>
+                <div class="detail-row"><span class="detail-key">PAYLOAD</span><span class="detail-val payload">{{ vuln.payload }}</span></div>
+                <div class="detail-row"><span class="detail-key">XSS TYPE</span><span class="detail-val">{{ vuln.type | replace("-", " ") | title }}</span></div>
+                <div class="detail-row"><span class="detail-key">IMPACT</span><span class="detail-val">
+                  {% if vuln.type == "stored" %}Payload persisted and re-rendered to users.
+                  {% elif vuln.type == "reflected" %}Payload reflected in the immediate server response.
+                  {% else %}Client-side DOM handling appears to process attacker-controlled input.
+                  {% endif %}
+                </span></div>
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No XSS vulnerabilities found.</p></div>
+        {% endif %}
+      </div>
+
+      <!-- ── LFI Results ────────────────────────────────── -->
+      <div class="section">
+        <h3>LFI / Path Traversal</h3>
+        {% if lfi_vulnerabilities %}
+          {% for vuln in lfi_vulnerabilities %}
+            {% set vid = "lfi-" ~ loop.index %}
+            <div class="vuln-card vuln-critical">
+              <div class="vuln-header">
+                <span class="vuln-type">{{ vuln.type }}</span>
+                <span class="severity-badge sev-critical">CRITICAL</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
+                <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.param }}</span></p>
+                {% if vuln.evidence %}
+                <p><span class="vuln-key">Evidence</span><span class="vuln-val">{{ vuln.evidence }}</span></p>
+                {% endif %}
+                <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                {% if not pdf_mode %}
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                {% endif %}
+              </div>
+              {% if not pdf_mode %}
+              <div class="vuln-details-panel" id="{{ vid }}">
+                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">GET</span></div>
+                <hr class="detail-sep">
+                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ vuln.url }}</span></div>
+                <div class="detail-row"><span class="detail-key">PARAMETER</span><span class="detail-val param">{{ vuln.param }}</span></div>
+                <div class="detail-row"><span class="detail-key">PAYLOAD</span><span class="detail-val payload">{{ vuln.payload }}</span></div>
+                {% if vuln.evidence %}
+                <div class="detail-row"><span class="detail-key">EVIDENCE</span><span class="detail-val">{{ vuln.evidence }}</span></div>
+                {% endif %}
+                <div class="detail-row"><span class="detail-key">IMPACT</span><span class="detail-val">The application appears to read local server files through attacker-controlled input.</span></div>
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No LFI vulnerabilities found.</p></div>
+        {% endif %}
+      </div>
+
+      <!-- ── File Exposure ──────────────────────────────── -->
+      <div class="section">
+        <h3>Sensitive File Exposure</h3>
+        {% if file_findings %}
+          {% for f in file_findings %}
+            {% set vid = "file-" ~ loop.index %}
+            <div class="vuln-card vuln-{{ f.severity }}">
+              <div class="vuln-header">
+                <span class="vuln-type">Exposed Path</span>
+                <span class="severity-badge sev-{{ f.severity }}">{{ f.severity | upper }}</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span>
+                  <span class="vuln-val">
+                    <a href="{{ f.url }}" target="_blank" style="color:var(--accent)">{{ f.url }}</a>
+                  </span>
+                </p>
+                <p><span class="vuln-key">HTTP Status</span><span class="vuln-val">{{ f.status }}</span></p>
+                <p><span class="vuln-key">Size</span><span class="vuln-val">{{ f.size }} bytes</span></p>
+                {% if not pdf_mode %}
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                {% endif %}
+              </div>
+              {% if not pdf_mode %}
+              <div class="vuln-details-panel" id="{{ vid }}">
+                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">GET</span></div>
+                <hr class="detail-sep">
+                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ f.url }}</span></div>
+                <div class="detail-row">
+                  <span class="detail-key">STATUS</span>
+                  <span class="detail-val status-{{ f.status }}">{{ f.status }}</span>
+                </div>
+                <div class="detail-row"><span class="detail-key">BODY SIZE</span><span class="detail-val">{{ f.size }} bytes</span></div>
+                <div class="detail-row"><span class="detail-key">RISK</span><span class="detail-val">A potentially sensitive path is reachable and returned a non-error response.</span></div>
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No sensitive files exposed.</p></div>
+        {% endif %}
+      </div>
+
+      <!-- ── Subdomain Results ──────────────────────────── -->
+      <div class="section">
+        <h3>Subdomain Enumeration</h3>
+        {% if subdomain_findings %}
+          <table>
+            <thead>
+              <tr><th>Subdomain</th><th>IP</th><th>HTTP Status</th><th>Title</th><th>Severity</th></tr>
+            </thead>
+            <tbody>
+              {% for f in subdomain_findings %}
+                <tr>
+                  <td><a href="{{ f.url }}" target="_blank" style="color:var(--accent)">{{ f.subdomain }}</a></td>
+                  <td>{{ f.ip }}</td>
+                  <td>{{ f.status }}</td>
+                  <td>{{ f.title or "—" }}</td>
+                  <td class="sev-{{ f.severity }}">{{ f.severity | upper }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No subdomains discovered.</p></div>
+        {% endif %}
+      </div>
+
+      {% if not pdf_mode %}
+        <div class="report-actions">
+          <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
+          <a href="/" class="back-link">← New Scan</a>
+        </div>
+      {% endif %}
+
+      </div>
+    </div>
+
+    <script>
+      function toggleEl(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle("open");
+        const btn = el.previousElementSibling;
+        if (btn && btn.classList.contains("detail-toggle")) {
+          btn.textContent = el.classList.contains("open")
+            ? "▼ Hide details"
+            : "▶ Request details";
+          if (id.startsWith("pages")) {
+            btn.textContent = el.classList.contains("open")
+              ? "▼ Hide URLs"
+              : "▶ Show all URLs";
+          }
+          btn.classList.toggle("open", el.classList.contains("open"));
+        }
+      }
+    </script>
+
+  </body>
+</html>

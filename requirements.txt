@@ -1,0 +1,37 @@
+
+# Web framework
+Flask==3.1.2
+Werkzeug==3.1.5
+#email
+Flask-Mail==0.10.0
+# MongoDB 
+Flask-PyMongo==2.3.0
+pymongo==4.10.1
+python-dotenv==1.0.1
+
+# Auth
+flask-login==0.6.3
+flask-bcrypt==1.0.1
+
+# HTTP / crawling
+requests==2.32.5
+beautifulsoup4==4.12.3
+lxml==5.2.1
+urllib3==2.6.3
+
+# Port scanning
+python-nmap==0.7.1
+
+# PDF generation
+weasyprint==62.3
+pydyf==0.11.0
+
+# Core deps
+blinker==1.9.0
+certifi==2026.1.4
+charset-normalizer==3.4.4
+click==8.3.1
+idna==3.11
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3

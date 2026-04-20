@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Email – WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-page">
+<div class="page-shell" style="max-width:520px">
+  <section class="shell-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">WebVulnScan</span>
+    </div>
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>WebVulnScan</h1>
+          <p class="subtitle">Verify your email</p>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+      <p style="font-size:13px; color:#aaa; margin-bottom:16px;">
+        Enter the 6-digit code sent to your email.
+      </p>
+      <form action="/verify" method="POST" class="form-stack">
+        <div class="field-row">
+          <label>Verification Code</label>
+          <input type="text" name="code" placeholder="123456"
+                 maxlength="6" autocomplete="off" required
+                 style="letter-spacing:8px; font-size:22px; text-align:center;">
+        </div>
+        <button type="submit">Verify Email</button>
+      </form>
+      <div class="footer"><a href="/register">← Back to Register</a></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="error-page">
+  <div class="page-shell" style="max-width:720px">
+    <section class="shell-card">
+      <div class="window-bar">
+        <span class="window-dot r"></span>
+        <span class="window-dot y"></span>
+        <span class="window-dot g"></span>
+        <span class="window-title">WebVulnScan</span>
+      </div>
+      <div class="page-panel">
+        <div class="brand">
+          <div class="logo"></div>
+          <div>
+            <h1>WebVulnScan</h1>
+            <p class="subtitle">Something went wrong</p>
+          </div>
+        </div>
+
+        <div class="error-box">
+          <span class="error-icon">✕</span>
+          <p>{{ message | safe }}</p>
+        </div>
+
+        <div class="report-actions">
+          <a href="/" class="download-btn">Return Home</a>
+          <a href="/" class="back-link">Try again</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
