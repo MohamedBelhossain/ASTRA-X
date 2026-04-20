@@ -12,15 +12,21 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"
+    env_file:
+      - .env
     environment:
-      MONGO_URI: "mongodb+srv://anasamechaibou_db_user:QW3S4QeWJZW2eTbX@cluster0.fsrducb.mongodb.net/?appName=Cluster0"
-      SECRET_KEY: "d6a1f72690bc4d2980827b4ca1d5c272a49b4efa7ec0941f68532f933d029246"
-      MAIL_SERVER: "smtp.gmail.com"
-      MAIL_PORT: "587"
-      MAIL_USE_TLS: "true"
-      MAIL_USERNAME: "anasame28@gmail.com"
-      MAIL_PASSWORD: "zniqzfbvisbntvzd"
-      MAIL_DEFAULT_SENDER: "anasame28@gmail.com"
+      MONGO_URI: "${DOCKER_MONGO_URI:-mongodb://mongo:27017/webvuln}"
+      SECRET_KEY: "${SECRET_KEY:-CHANGE-THIS-IN-PRODUCTION}"
+      MAIL_SERVER: "${MAIL_SERVER:-smtp.gmail.com}"
+      MAIL_PORT: "${MAIL_PORT:-587}"
+      MAIL_USE_TLS: "${MAIL_USE_TLS:-true}"
+      MAIL_USERNAME: "${MAIL_USERNAME:-}"
+      MAIL_PASSWORD: "${MAIL_PASSWORD:-}"
+      MAIL_DEFAULT_SENDER: "${MAIL_DEFAULT_SENDER:-}"
+      MAIL_CONSOLE_FALLBACK: "${MAIL_CONSOLE_FALLBACK:-true}"
+      SCAN_RATE_LIMIT_MAX: "${SCAN_RATE_LIMIT_MAX:-5}"
+      SCAN_RATE_LIMIT_WINDOW_SECONDS: "${SCAN_RATE_LIMIT_WINDOW_SECONDS:-3600}"
+      MAX_ACTIVE_SCANS_PER_USER: "${MAX_ACTIVE_SCANS_PER_USER:-1}"
     depends_on:
       - mongo
 

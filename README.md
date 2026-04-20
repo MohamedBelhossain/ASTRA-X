@@ -1,19 +1,21 @@
 # WebVulnScan
 
-WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentication, live scan streaming, report generation, and PDF export.
+WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentication, live scan streaming, report generation, PDF export, and MongoDB-backed users.
 
 ## Features
 
 - User registration and login with `flask-login`
+- Email verification and password reset with `Flask-Mail`
 - Public landing page at `/`
 - Live scan progress via server-sent events
 - Port scanning with `python-nmap`
 - Web crawling and form discovery
-- SQL injection, XSS, and LFI checks
+- SQL injection, XSS, LFI, and brute-force checks
 - Sensitive file exposure checks
 - Subdomain enumeration
+- Per-user scan quotas and single active-scan enforcement
 - HTML report view and PDF download
-- MongoDB-backed user storage
+- MongoDB-backed user and reset-token storage
 
 ## Tech Stack
 
@@ -23,6 +25,7 @@ WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentic
 - Flask-PyMongo
 - Flask-Login
 - Flask-Bcrypt
+- Flask-Mail
 - WeasyPrint
 - Requests
 - BeautifulSoup
@@ -34,7 +37,7 @@ WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentic
 app/
   app.py                Main Flask app and routes
   auth.py               Authentication routes
-  models.py             Mongo-backed user model
+  models.py             Mongo-backed user and reset-token models
   templates/            Landing, auth, dashboard, report, error pages
   static/               Shared CSS
   scanner/              Scanning modules
@@ -72,6 +75,13 @@ Notes:
 
 - `SECRET_KEY` is required for login sessions and flash messages.
 - `MONGO_URI` points to your MongoDB instance.
+- Optional scan throttling:
+
+```env
+SCAN_RATE_LIMIT_MAX=5
+SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
+MAX_ACTIVE_SCANS_PER_USER=1
+```
 
 ## Local Development
 
@@ -114,6 +124,9 @@ MAIL_USE_TLS=true
 MAIL_USERNAME=your_email@gmail.com
 MAIL_PASSWORD=your_16char_app_password
 MAIL_DEFAULT_SENDER=your_email@gmail.com
+SCAN_RATE_LIMIT_MAX=5
+SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
+MAX_ACTIVE_SCANS_PER_USER=1
 ```
 
 ### 5. Start MongoDB
@@ -162,22 +175,24 @@ Default compose environment:
 
 - App: `http://localhost:5000`
 - MongoDB: `mongodb://mongo:27017/webvuln`
+- Mail and scan-rate settings are loaded from `.env` when present
 
 ## App Flow
 
 1. Open `/`
-2. Register or log in
-3. Start a scan on a target URL
-4. Watch the live stream output
-5. Open the generated report
-6. Download the PDF report if needed
+2. Register your account
+3. Verify your email and sign in
+4. Start a scan on a target URL
+5. Watch the live stream output
+6. Open the generated report
+7. Download the PDF report if needed
 
 ## Important Notes
 
 - This project is intended for authorized security testing only.
 - Scans can take time depending on the target and enabled modules.
 - Scan results are currently kept in memory for report display during runtime.
-- User accounts are stored in MongoDB.
+- User accounts and reset tokens are stored in MongoDB.
 
 ## Troubleshooting
 

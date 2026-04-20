@@ -56,6 +56,27 @@ def _send_verification_code(pending):
     )
 
 
+def _mail_console_fallback_enabled():
+    return bool(
+        current_app.testing
+        or current_app.debug
+        or current_app.config.get("MAIL_CONSOLE_FALLBACK")
+    )
+
+
+def _handle_console_code_fallback(flow_name, email, code):
+    current_app.logger.warning(
+        "%s email delivery failed; console fallback code for %s is %s",
+        flow_name,
+        email,
+        code,
+    )
+    flash(
+        "Email delivery failed. Use the 6-digit code printed in the server terminal to continue.",
+        "warning",
+    )
+
+
 # ─────────────────────────────────────────
 #  REGISTER
 # ─────────────────────────────────────────
@@ -101,6 +122,14 @@ def register():
         _issue_pending_code(pending_user)
 
         if not _send_verification_code(session["pending_user"]):
+            if _mail_console_fallback_enabled():
+                _handle_console_code_fallback(
+                    "Verification",
+                    email,
+                    session["pending_user"]["code"],
+                )
+                return redirect(url_for("auth.verify_email"))
+
             flash("Verification email could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.", "danger")
             return render_template("register.html", form_data=form_data)
 
@@ -188,6 +217,14 @@ def resend_verification_code():
 
     _issue_pending_code(pending)
     if not _send_verification_code(session["pending_user"]):
+        if _mail_console_fallback_enabled():
+            _handle_console_code_fallback(
+                "Verification",
+                pending["email"],
+                session["pending_user"]["code"],
+            )
+            return redirect(url_for("auth.verify_email"))
+
         flash("Verification email could not be resent. Check MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.", "danger")
         return redirect(url_for("auth.verify_email"))
 
@@ -247,6 +284,10 @@ def forgot_password():
                     "If you did not request this, ignore this email."
                 ),
             ):
+                if _mail_console_fallback_enabled():
+                    _handle_console_code_fallback("Reset", email, code)
+                    return redirect(url_for("auth.reset_password"))
+
                 flash("Reset email could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.", "danger")
                 return render_template("forgot_password.html", email_value=email)
 
@@ -332,6 +373,10 @@ def resend_reset_code():
                 "If you did not request this, ignore this email."
             ),
         ):
+            if _mail_console_fallback_enabled():
+                _handle_console_code_fallback("Reset", email, code)
+                return redirect(url_for("auth.reset_password"))
+
             flash("Reset email could not be resent. Check MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.", "danger")
             return redirect(url_for("auth.reset_password"))
 

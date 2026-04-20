@@ -9,4 +9,3 @@ __pycache__/
 .codex
 
 .env
-docker-compose.yml
