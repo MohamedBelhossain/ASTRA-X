@@ -24,6 +24,7 @@ from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.xss_scanner import scan_xss
 from app.scanner.lfi_scanner import scan_lfi
 from app.scanner.subdomain_scanner import scan_subdomains
+from app.scanner.bruteforce_scanner import scan_bruteforce
 
 app = Flask(__name__)
 
@@ -62,6 +63,10 @@ with app.app_context():
 scan_store  = {}
 event_store = {}
 SCAN_MODES = {"fast", "deep"}
+SCAN_RATE_LIMIT_MAX = int(os.environ.get("SCAN_RATE_LIMIT_MAX", "5"))
+SCAN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("SCAN_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+MAX_ACTIVE_SCANS_PER_USER = int(os.environ.get("MAX_ACTIVE_SCANS_PER_USER", "1"))
+scan_quota_lock = threading.Lock()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,6 +111,30 @@ def mark_skipped(scan_id, phase_name, reason):
     log(scan_id, f"Skipping {reason} in fast scan mode.", "warn")
 
 
+def get_active_scan_count_for_user(user_id):
+    return sum(
+        1
+        for store in event_store.values()
+        if store.get("owner_id") == user_id and not store.get("done")
+    )
+
+
+def get_scan_quota_context(user_id):
+    quota = User.get_scan_quota_status(
+        user_id=user_id,
+        window_seconds=SCAN_RATE_LIMIT_WINDOW_SECONDS,
+        max_scans=SCAN_RATE_LIMIT_MAX,
+    )
+    quota["active_scans"] = get_active_scan_count_for_user(user_id)
+    quota["max_active_scans"] = MAX_ACTIVE_SCANS_PER_USER
+    return quota
+
+
+def user_owns_scan(scan_id):
+    store = scan_store.get(scan_id) or event_store.get(scan_id)
+    return bool(store and store.get("owner_id") == current_user.id)
+
+
 # ── Background scan runner ────────────────────────────────────────────────────
 
 def run_scan(scan_id, target, scan_mode):
@@ -133,6 +162,26 @@ def run_scan(scan_id, target, scan_mode):
         sqli_vulns = []
         xss_vulns  = []
         lfi_vulns  = []
+        bruteforce_result = {
+            "waf_detected": False,
+            "waf_detail": None,
+            "bypass_hints": [],
+            "login_forms": 0,
+            "attempts": 0,
+            "credentials_found": [],
+            "blocked_payloads": [],
+            "candidate_pages": 0,
+            "rate_limit_probe": {
+                "tested": False,
+                "requests_sent": 0,
+                "allowed_before_block": 0,
+                "blocked": False,
+                "blocked_at_request": None,
+                "block_status": None,
+                "average_response_ms": None,
+                "statuses": [],
+            },
+        }
         file_findings = []
         subdomain_findings = []
 
@@ -140,9 +189,11 @@ def run_scan(scan_id, target, scan_mode):
         phase(scan_id, "xss",  "running")
         if scan_mode == "deep":
             phase(scan_id, "lfi", "running")
+            phase(scan_id, "brute", "pending")
             log(scan_id, "Injecting payloads across all discovered pages…")
         else:
             mark_skipped(scan_id, "lfi", "LFI checks")
+            mark_skipped(scan_id, "brute", "brute-force checks")
             mark_skipped(scan_id, "files", "file exposure checks")
             mark_skipped(scan_id, "subd", "subdomain enumeration")
             log(scan_id, "Fast mode enabled: running only the quickest core checks.", "warn")
@@ -218,6 +269,56 @@ def run_scan(scan_id, target, scan_mode):
             "success")
 
         if scan_mode == "deep":
+            phase(scan_id, "brute", "running")
+            log(scan_id, "Inspecting authentication forms and testing a small credential list…")
+            bruteforce_result = scan_bruteforce(target, pages=pages)
+            credential_count = len(bruteforce_result.get("credentials_found", []))
+            phase(scan_id, "brute", "done", credential_count)
+
+            if bruteforce_result.get("waf_detected"):
+                log(
+                    scan_id,
+                    f"Brute-force checks paused because a WAF was detected: {bruteforce_result.get('waf_detail')}",
+                    "warn",
+                )
+            else:
+                log(
+                    scan_id,
+                    f"Brute-force checked {bruteforce_result.get('login_forms', 0)} login form(s) across "
+                    f"{bruteforce_result.get('candidate_pages', 0)} candidate page(s) with "
+                    f"{bruteforce_result.get('attempts', 0)} attempt(s).",
+                    "success",
+                )
+                rate_probe = bruteforce_result.get("rate_limit_probe", {})
+                if rate_probe.get("tested"):
+                    if rate_probe.get("blocked"):
+                        log(
+                            scan_id,
+                            f"Request-threshold probe was blocked after {rate_probe.get('allowed_before_block', 0)} successful request(s) "
+                            f"with HTTP {rate_probe.get('block_status')}.",
+                            "warn",
+                        )
+                    else:
+                        log(
+                            scan_id,
+                            f"Request-threshold probe sent {rate_probe.get('requests_sent', 0)} rapid request(s) without hitting an explicit rate limit.",
+                            "success",
+                        )
+
+            for finding in bruteforce_result.get("credentials_found", []):
+                vuln_event(scan_id, "bruteforce", finding)
+                log(
+                    scan_id,
+                    f"[Brute Force] Valid credentials found for {finding.get('login_url', finding.get('url', '?'))}",
+                    "vuln",
+                    {
+                        "method": finding.get("method", "POST"),
+                        "url": finding.get("login_url") or finding.get("url"),
+                        "param": "credentials",
+                        "payload": f"{finding.get('username')} / {finding.get('password')}",
+                    },
+                )
+
             phase(scan_id, "files", "running")
             phase(scan_id, "subd",  "running")
             log(scan_id, "Checking file exposure and enumerating subdomains…")
@@ -244,8 +345,10 @@ def run_scan(scan_id, target, scan_mode):
             "vulnerabilities":     sqli_vulns,
             "xss_vulnerabilities": xss_vulns,
             "lfi_vulnerabilities": lfi_vulns,
+            "bruteforce_result":   bruteforce_result,
             "file_findings":       file_findings,
             "subdomain_findings":  subdomain_findings,
+            "owner_id":            event_store[scan_id].get("owner_id"),
         }
 
         log(scan_id, "Scan complete. Building report…", "success")
@@ -270,7 +373,7 @@ def home():
 @app.route("/dashboard", methods=["GET"])
 @login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", scan_quota=get_scan_quota_context(current_user.id))
 
 
 @app.route("/start-scan", methods=["POST"])
@@ -304,21 +407,50 @@ def start_scan():
         return jsonify({"error": f"Invalid or unreachable URL: {e}"}), 400
 
     scan_id = str(uuid.uuid4())
-    event_store[scan_id] = {"events": [], "done": False}
+    with scan_quota_lock:
+        active_scans = get_active_scan_count_for_user(current_user.id)
+        if active_scans >= MAX_ACTIVE_SCANS_PER_USER:
+            return jsonify({
+                "error": "You already have a scan running. Please wait for it to finish.",
+                "rate_limit": get_scan_quota_context(current_user.id),
+            }), 429
+
+        quota_result = User.consume_scan_quota(
+            user_id=current_user.id,
+            window_seconds=SCAN_RATE_LIMIT_WINDOW_SECONDS,
+            max_scans=SCAN_RATE_LIMIT_MAX,
+        )
+        if not quota_result.get("allowed"):
+            return jsonify({
+                "error": f"Scan limit reached. Try again in about {quota_result.get('retry_after', 60)} seconds.",
+                "retry_after_seconds": quota_result.get("retry_after", 60),
+                "rate_limit": get_scan_quota_context(current_user.id),
+            }), 429
+        event_store[scan_id] = {"events": [], "done": False, "owner_id": current_user.id}
 
     thread = threading.Thread(target=run_scan, args=(scan_id, target, scan_mode), daemon=True)
     thread.start()
 
-    return jsonify({"scan_id": scan_id, "target": target, "scan_mode": scan_mode})
+    return jsonify({
+        "scan_id": scan_id,
+        "target": target,
+        "scan_mode": scan_mode,
+        "rate_limit": get_scan_quota_context(current_user.id),
+    })
 
 
 @app.route("/stream/<scan_id>")
 @login_required
 def stream(scan_id):
+    owner_id = current_user.id
+
     def generate():
         store = event_store.get(scan_id)
         if not store:
             yield f"data: {json.dumps({'type':'error','data':{'msg':'Scan not found.'}})}\n\n"
+            return
+        if store.get("owner_id") != owner_id:
+            yield f"data: {json.dumps({'type':'error','data':{'msg':'Access denied.'}})}\n\n"
             return
 
         cursor = 0
@@ -345,9 +477,29 @@ def stream(scan_id):
 @login_required
 def report(scan_id):
     data = scan_store.get(scan_id)
-    if not data:
+    if not data or not user_owns_scan(scan_id):
         return render_template("error.html",
                                message="Report not found or scan still running.")
+    data.setdefault("bruteforce_result", {
+        "waf_detected": False,
+        "waf_detail": None,
+        "bypass_hints": [],
+        "login_forms": 0,
+        "attempts": 0,
+        "credentials_found": [],
+        "blocked_payloads": [],
+        "candidate_pages": 0,
+        "rate_limit_probe": {
+            "tested": False,
+            "requests_sent": 0,
+            "allowed_before_block": 0,
+            "blocked": False,
+            "blocked_at_request": None,
+            "block_status": None,
+            "average_response_ms": None,
+            "statuses": [],
+        },
+    })
     return render_template(
         "report.html",
         scan_id=scan_id,
@@ -361,8 +513,28 @@ def report(scan_id):
 @login_required
 def download(scan_id):
     data = scan_store.get(scan_id)
-    if not data:
+    if not data or not user_owns_scan(scan_id):
         return render_template("error.html", message="Scan report not found or expired.")
+    data.setdefault("bruteforce_result", {
+        "waf_detected": False,
+        "waf_detail": None,
+        "bypass_hints": [],
+        "login_forms": 0,
+        "attempts": 0,
+        "credentials_found": [],
+        "blocked_payloads": [],
+        "candidate_pages": 0,
+        "rate_limit_probe": {
+            "tested": False,
+            "requests_sent": 0,
+            "allowed_before_block": 0,
+            "blocked": False,
+            "blocked_at_request": None,
+            "block_status": None,
+            "average_response_ms": None,
+            "statuses": [],
+        },
+    })
 
     try:
         stylesheet_href = (Path(app.root_path) / "static" / "report_pdf.css").resolve().as_uri()
