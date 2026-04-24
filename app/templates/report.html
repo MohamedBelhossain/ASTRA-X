@@ -117,6 +117,10 @@
 
         <div class="summary-row">
           <div class="summary-badge">
+            <span class="summary-num">{{ status | upper }}</span>
+            <span class="summary-label">Scan Status</span>
+          </div>
+          <div class="summary-badge">
             <span class="summary-num">{{ pages_scanned }}</span>
             <span class="summary-label">Pages Scanned</span>
           </div>
@@ -179,6 +183,26 @@
       <div class="section">
         <h3>Pages Scanned</h3>
         <p>{{ pages_scanned }} pages discovered during crawl.</p>
+        {% if crawl_diagnostics and crawl_diagnostics.anti_bot_detected %}
+          <div class="vuln-card vuln-medium">
+            <div class="vuln-header">
+              <span class="vuln-type">Crawl Protection Detected</span>
+              <span class="severity-badge sev-medium">MEDIUM</span>
+            </div>
+            <div class="vuln-body">
+              <p><span class="vuln-key">Summary</span><span class="vuln-val">The crawler saw behavior consistent with anti-bot filtering or WAF protection.</span></p>
+              {% if crawl_diagnostics.anti_bot_reasons %}
+              <p><span class="vuln-key">Signals</span><span class="vuln-val">{{ crawl_diagnostics.anti_bot_reasons | join(", ") }}</span></p>
+              {% endif %}
+              {% if crawl_diagnostics.blocked_urls %}
+              <p><span class="vuln-key">Blocked Pages</span><span class="vuln-val">{{ crawl_diagnostics.blocked_urls | length }}</span></p>
+              {% endif %}
+              {% if crawl_diagnostics.timeout_urls %}
+              <p><span class="vuln-key">Timeouts</span><span class="vuln-val">{{ crawl_diagnostics.timeout_urls | length }}</span></p>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
         {% if pages %}
           {% if not pdf_mode %}
           <button class="detail-toggle" onclick="toggleEl('pages-list')">▶ Show all URLs</button>
@@ -220,6 +244,9 @@
                 {% endif %}
                 {% if vuln.delay_seconds %}
                   <p><span class="vuln-key">Delay</span><span class="vuln-val">{{ vuln.delay_seconds }}s</span></p>
+                {% endif %}
+                {% if vuln.confidence %}
+                  <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
@@ -266,6 +293,12 @@
                   <span class="detail-val">{{ vuln.delay_seconds }}s response delay detected</span>
                 </div>
                 {% endif %}
+                {% if vuln.evidence_excerpt %}
+                <div class="detail-row">
+                  <span class="detail-key">SNIPPET</span>
+                  <span class="detail-val">{{ vuln.evidence_excerpt }}</span>
+                </div>
+                {% endif %}
               </div>
               {% endif %}
             </div>
@@ -293,6 +326,9 @@
                 <p><span class="vuln-key">URL</span><span class="vuln-val">{{ vuln.url }}</span></p>
                 <p><span class="vuln-key">Parameter</span><span class="vuln-val">{{ vuln.parameter }}</span></p>
                 <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                {% if vuln.confidence %}
+                <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
+                {% endif %}
                 {% if not pdf_mode %}
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
                 {% endif %}
@@ -311,6 +347,9 @@
                   {% else %}Client-side DOM handling appears to process attacker-controlled input.
                   {% endif %}
                 </span></div>
+                {% if vuln.evidence_excerpt %}
+                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ vuln.evidence_excerpt }}</span></div>
+                {% endif %}
               </div>
               {% endif %}
             </div>
@@ -338,6 +377,9 @@
                 <p><span class="vuln-key">Evidence</span><span class="vuln-val">{{ vuln.evidence }}</span></p>
                 {% endif %}
                 <p><span class="vuln-key">Payload</span><code class="vuln-code">{{ vuln.payload }}</code></p>
+                {% if vuln.confidence %}
+                <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
+                {% endif %}
                 {% if not pdf_mode %}
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
                 {% endif %}
@@ -351,6 +393,9 @@
                 <div class="detail-row"><span class="detail-key">PAYLOAD</span><span class="detail-val payload">{{ vuln.payload }}</span></div>
                 {% if vuln.evidence %}
                 <div class="detail-row"><span class="detail-key">EVIDENCE</span><span class="detail-val">{{ vuln.evidence }}</span></div>
+                {% endif %}
+                {% if vuln.evidence_excerpt %}
+                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ vuln.evidence_excerpt }}</span></div>
                 {% endif %}
                 <div class="detail-row"><span class="detail-key">IMPACT</span><span class="detail-val">The application appears to read local server files through attacker-controlled input.</span></div>
               </div>
@@ -445,6 +490,9 @@
                 </p>
                 <p><span class="vuln-key">HTTP Status</span><span class="vuln-val">{{ f.status }}</span></p>
                 <p><span class="vuln-key">Size</span><span class="vuln-val">{{ f.size }} bytes</span></p>
+                {% if f.confidence %}
+                <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ f.confidence | upper }}</span></p>
+                {% endif %}
                 {% if not pdf_mode %}
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
                 {% endif %}
@@ -459,6 +507,9 @@
                   <span class="detail-val status-{{ f.status }}">{{ f.status }}</span>
                 </div>
                 <div class="detail-row"><span class="detail-key">BODY SIZE</span><span class="detail-val">{{ f.size }} bytes</span></div>
+                {% if f.evidence_excerpt %}
+                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ f.evidence_excerpt }}</span></div>
+                {% endif %}
                 <div class="detail-row"><span class="detail-key">RISK</span><span class="detail-val">A potentially sensitive path is reachable and returned a non-error response.</span></div>
               </div>
               {% endif %}
@@ -497,6 +548,7 @@
       {% if not pdf_mode %}
         <div class="report-actions">
           <a href="/download/{{ scan_id }}" class="download-btn">⬇ Download PDF</a>
+          <a href="/export/{{ scan_id }}.json" class="download-btn">JSON Export</a>
           <a href="/" class="back-link">← New Scan</a>
         </div>
       {% endif %}

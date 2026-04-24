@@ -8,13 +8,27 @@ from flask_pymongo import PyMongo
 mongo = PyMongo()
 
 
+def utcnow():
+    return datetime.utcnow()
+
+
+def serialize_document(value):
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [serialize_document(item) for item in value]
+    if isinstance(value, dict):
+        return {key: serialize_document(item) for key, item in value.items()}
+    return value
+
+
 class User(UserMixin):
     """Lightweight user wrapper around a MongoDB document."""
 
     def __init__(self, doc):
         self._doc = doc
-
-    # --- Flask-Login interface -----------------------------------------------
 
     def get_id(self):
         return str(self._doc["_id"])
@@ -43,8 +57,6 @@ class User(UserMixin):
     def recent_scan_starts(self):
         timestamps = self._doc.get("recent_scan_starts", [])
         return [float(ts) for ts in timestamps if isinstance(ts, (int, float))]
-
-    # --- Class-level helpers (mirrors SQLAlchemy query API used in auth.py) --
 
     @classmethod
     def _col(cls):
@@ -118,17 +130,11 @@ class User(UserMixin):
 
     @classmethod
     def set_verified(cls, email):
-        cls._col().update_one(
-            {"email": email},
-            {"$set": {"is_verified": True}},
-        )
+        cls._col().update_one({"email": email}, {"$set": {"is_verified": True}})
 
     @classmethod
     def update_password(cls, email, hashed_password):
-        cls._col().update_one(
-            {"email": email},
-            {"$set": {"password": hashed_password}},
-        )
+        cls._col().update_one({"email": email}, {"$set": {"password": hashed_password}})
 
     @classmethod
     def get_scan_quota_status(cls, user_id, window_seconds, max_scans, now=None):
@@ -162,7 +168,7 @@ class User(UserMixin):
 
     @classmethod
     def ensure_indexes(cls):
-        cls._col().create_index("email",    unique=True)
+        cls._col().create_index("email", unique=True)
         cls._col().create_index("username", unique=True)
 
 
@@ -174,13 +180,13 @@ class ResetToken:
         return mongo.db.reset_tokens
 
     @classmethod
-    def create(cls, email, code):
+    def create(cls, email, code_hash):
         cls._col().delete_many({"email": email})
-        now = datetime.utcnow()
+        now = utcnow()
         cls._col().insert_one(
             {
                 "email": email,
-                "code": code,
+                "code_hash": code_hash,
                 "used": False,
                 "created_at": now,
                 "expires_at": now + timedelta(minutes=10),
@@ -188,35 +194,253 @@ class ResetToken:
         )
 
     @classmethod
-    def find_valid(cls, email, code):
-        doc = cls._col().find_one(
-            {
-                "email": email,
-                "code": code,
-                "used": False,
-            }
-        )
+    def find_valid(cls, email):
+        doc = cls._col().find_one({"email": email, "used": False})
         if not doc:
             return None
 
         expires_at = doc.get("expires_at")
-        if expires_at and expires_at <= datetime.utcnow():
+        if expires_at and expires_at <= utcnow():
             return None
 
         created_at = doc.get("created_at")
-        if created_at and (datetime.utcnow() - created_at).total_seconds() > 600:
+        if created_at and (utcnow() - created_at).total_seconds() > 600:
             return None
 
         return doc
 
     @classmethod
-    def mark_used(cls, email, code):
-        cls._col().update_one(
-            {"email": email, "code": code},
-            {"$set": {"used": True}},
-        )
+    def mark_used(cls, email):
+        cls._col().update_one({"email": email}, {"$set": {"used": True}})
 
     @classmethod
     def ensure_indexes(cls):
         cls._col().create_index("email")
-        cls._col().create_index("expires_at")
+        cls._col().create_index("expires_at", expireAfterSeconds=0)
+
+
+class RateLimitBucket:
+    """Ephemeral documents used for auth throttling."""
+
+    @classmethod
+    def _col(cls):
+        return mongo.db.rate_limit_buckets
+
+    @classmethod
+    def check_and_record(cls, namespace, key, limit, window_seconds):
+        now = utcnow()
+        doc = {
+            "namespace": namespace,
+            "key": key,
+            "created_at": now,
+            "expires_at": now + timedelta(seconds=window_seconds),
+        }
+        cls._col().insert_one(doc)
+        count = cls._col().count_documents(
+            {
+                "namespace": namespace,
+                "key": key,
+                "created_at": {"$gte": now - timedelta(seconds=window_seconds)},
+            }
+        )
+        retry_after = 0
+        if count > limit:
+            oldest = cls._col().find_one(
+                {
+                    "namespace": namespace,
+                    "key": key,
+                    "created_at": {"$gte": now - timedelta(seconds=window_seconds)},
+                },
+                sort=[("created_at", 1)],
+            )
+            if oldest:
+                retry_after = max(
+                    1,
+                    int(
+                        (
+                            oldest["created_at"]
+                            + timedelta(seconds=window_seconds)
+                            - now
+                        ).total_seconds()
+                    ),
+                )
+        return {
+            "allowed": count <= limit,
+            "count": count,
+            "limit": limit,
+            "retry_after": retry_after,
+        }
+
+    @classmethod
+    def ensure_indexes(cls):
+        cls._col().create_index("expires_at", expireAfterSeconds=0)
+        cls._col().create_index([("namespace", 1), ("key", 1), ("created_at", -1)])
+
+
+class ScanRecord:
+    """Persistent scan metadata, event stream, and report data."""
+
+    ACTIVE_STATUSES = {"queued", "running", "cancelling"}
+
+    @classmethod
+    def _col(cls):
+        return mongo.db.scans
+
+    @classmethod
+    def _base_report(cls, scan_mode, target_url):
+        return {
+            "scan_mode": scan_mode,
+            "target_url": target_url,
+            "pages_scanned": 0,
+            "pages": [],
+            "open_ports": [],
+            "vulnerabilities": [],
+            "xss_vulnerabilities": [],
+            "lfi_vulnerabilities": [],
+            "bruteforce_result": {
+                "waf_detected": False,
+                "waf_detail": None,
+                "bypass_hints": [],
+                "login_forms": 0,
+                "attempts": 0,
+                "credentials_found": [],
+                "blocked_payloads": [],
+                "candidate_pages": 0,
+                "rate_limit_probe": {
+                    "tested": False,
+                    "requests_sent": 0,
+                    "allowed_before_block": 0,
+                    "blocked": False,
+                    "blocked_at_request": None,
+                    "block_status": None,
+                    "average_response_ms": None,
+                    "statuses": [],
+                },
+            },
+            "file_findings": [],
+            "subdomain_findings": [],
+        }
+
+    @classmethod
+    def create(cls, scan_id, owner_id, target_url, target_host, resolved_ips, scan_mode):
+        now = utcnow()
+        doc = {
+            "scan_id": scan_id,
+            "owner_id": owner_id,
+            "target_url": target_url,
+            "target_host": target_host,
+            "resolved_ips": resolved_ips,
+            "scan_mode": scan_mode,
+            "status": "queued",
+            "cancel_requested": False,
+            "created_at": now,
+            "started_at": None,
+            "finished_at": None,
+            "last_error": None,
+            "events": [],
+            "phases": {},
+            "report": cls._base_report(scan_mode, target_url),
+        }
+        cls._col().insert_one(doc)
+        return doc
+
+    @classmethod
+    def find_by_scan_id(cls, scan_id):
+        return cls._col().find_one({"scan_id": scan_id})
+
+    @classmethod
+    def find_owned(cls, scan_id, owner_id):
+        return cls._col().find_one({"scan_id": scan_id, "owner_id": owner_id})
+
+    @classmethod
+    def mark_running(cls, scan_id):
+        cls._col().update_one(
+            {"scan_id": scan_id},
+            {"$set": {"status": "running", "started_at": utcnow()}},
+        )
+
+    @classmethod
+    def append_event(cls, scan_id, event_type, data):
+        event = {"type": event_type, "data": data, "created_at": utcnow()}
+        cls._col().update_one({"scan_id": scan_id}, {"$push": {"events": event}})
+        return event
+
+    @classmethod
+    def update_phase(cls, scan_id, name, status, count=None):
+        phase_data = {"status": status}
+        if count is not None:
+            phase_data["count"] = count
+        cls._col().update_one({"scan_id": scan_id}, {"$set": {f"phases.{name}": phase_data}})
+
+    @classmethod
+    def update_status(cls, scan_id, status, last_error=None):
+        payload = {"status": status}
+        if status in {"completed", "failed", "cancelled"}:
+            payload["finished_at"] = utcnow()
+        if last_error is not None:
+            payload["last_error"] = last_error
+        cls._col().update_one({"scan_id": scan_id}, {"$set": payload})
+
+    @classmethod
+    def request_cancel(cls, scan_id, owner_id):
+        result = cls._col().update_one(
+            {"scan_id": scan_id, "owner_id": owner_id, "status": {"$in": list(cls.ACTIVE_STATUSES)}},
+            {"$set": {"cancel_requested": True, "status": "cancelling"}},
+        )
+        return bool(result.modified_count)
+
+    @classmethod
+    def is_cancel_requested(cls, scan_id):
+        doc = cls.find_by_scan_id(scan_id)
+        return bool(doc and doc.get("cancel_requested"))
+
+    @classmethod
+    def finalize_report(cls, scan_id, report):
+        serializable_report = serialize_document(report)
+        cls._col().update_one({"scan_id": scan_id}, {"$set": {"report": serializable_report}})
+
+    @classmethod
+    def count_active_for_user(cls, owner_id):
+        return cls._col().count_documents(
+            {"owner_id": owner_id, "status": {"$in": list(cls.ACTIVE_STATUSES)}}
+        )
+
+    @classmethod
+    def list_for_user(cls, owner_id, limit=20):
+        cursor = cls._col().find({"owner_id": owner_id}).sort("created_at", -1).limit(limit)
+        return [serialize_document(doc) for doc in cursor]
+
+    @classmethod
+    def serializable_report_for_owner(cls, scan_id, owner_id):
+        doc = cls.find_owned(scan_id, owner_id)
+        if not doc:
+            return None
+        report = serialize_document(doc.get("report") or cls._base_report(doc.get("scan_mode", "deep"), doc.get("target_url", "")))
+        report.update(
+            {
+                "scan_id": doc["scan_id"],
+                "status": doc.get("status", "unknown"),
+                "cancel_requested": doc.get("cancel_requested", False),
+                "created_at": serialize_document(doc.get("created_at")),
+                "started_at": serialize_document(doc.get("started_at")),
+                "finished_at": serialize_document(doc.get("finished_at")),
+                "target_host": doc.get("target_host"),
+                "resolved_ips": doc.get("resolved_ips", []),
+                "last_error": doc.get("last_error"),
+                "phases": serialize_document(doc.get("phases", {})),
+            }
+        )
+        return report
+
+    @classmethod
+    def serialized_events_for_owner(cls, scan_id, owner_id):
+        doc = cls.find_owned(scan_id, owner_id)
+        if not doc:
+            return None
+        return [serialize_document(event) for event in doc.get("events", [])]
+
+    @classmethod
+    def ensure_indexes(cls):
+        cls._col().create_index("scan_id", unique=True)
+        cls._col().create_index([("owner_id", 1), ("created_at", -1)])
+        cls._col().create_index([("status", 1), ("owner_id", 1)])

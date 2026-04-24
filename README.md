@@ -5,9 +5,11 @@ WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentic
 ## Features
 
 - User registration and login with `flask-login`
+- CSRF protection, auth throttling, and safer session cookie defaults
 - Email verification and password reset with `Flask-Mail`
 - Public landing page at `/`
 - Live scan progress via server-sent events
+- Durable Mongo-backed scan jobs, history, cancellation, and JSON export
 - Port scanning with `python-nmap`
 - Web crawling and form discovery
 - SQL injection, XSS, LFI, and brute-force checks
@@ -15,7 +17,7 @@ WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentic
 - Subdomain enumeration
 - Per-user scan quotas and single active-scan enforcement
 - HTML report view and PDF download
-- MongoDB-backed user and reset-token storage
+- MongoDB-backed users, reset tokens, rate-limit buckets, and scan storage
 
 ## Tech Stack
 
@@ -75,12 +77,18 @@ Notes:
 
 - `SECRET_KEY` is required for login sessions and flash messages.
 - `MONGO_URI` points to your MongoDB instance.
-- Optional scan throttling:
+- `ALLOW_PRIVATE_TARGETS=false` blocks localhost/private-network targets by default to reduce SSRF risk.
+- Optional scan throttling and security knobs:
 
 ```env
 SCAN_RATE_LIMIT_MAX=5
 SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
 MAX_ACTIVE_SCANS_PER_USER=1
+SCAN_WORKERS=2
+MIN_PASSWORD_LENGTH=10
+SESSION_COOKIE_SECURE=false
+SESSION_COOKIE_SAMESITE=Lax
+ALLOW_PRIVATE_TARGETS=false
 ```
 
 ## Local Development
@@ -127,6 +135,11 @@ MAIL_DEFAULT_SENDER=your_email@gmail.com
 SCAN_RATE_LIMIT_MAX=5
 SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
 MAX_ACTIVE_SCANS_PER_USER=1
+SCAN_WORKERS=2
+MIN_PASSWORD_LENGTH=10
+SESSION_COOKIE_SECURE=false
+SESSION_COOKIE_SAMESITE=Lax
+ALLOW_PRIVATE_TARGETS=false
 ```
 
 ### 5. Start MongoDB
@@ -185,14 +198,15 @@ Default compose environment:
 4. Start a scan on a target URL
 5. Watch the live stream output
 6. Open the generated report
-7. Download the PDF report if needed
+7. Export JSON or download the PDF report if needed
+8. Revisit prior scans from the dashboard history table
 
 ## Important Notes
 
 - This project is intended for authorized security testing only.
 - Scans can take time depending on the target and enabled modules.
-- Scan results are currently kept in memory for report display during runtime.
-- User accounts and reset tokens are stored in MongoDB.
+- Scan events, reports, and history are persisted in MongoDB.
+- User accounts, reset tokens, and auth throttle buckets are stored in MongoDB.
 
 ## Troubleshooting
 
@@ -202,7 +216,7 @@ Check:
 
 - WeasyPrint system dependencies are installed
 - the scan has completed successfully
-- the report exists in memory for the current app session
+- the scan has stored a completed report in MongoDB
 
 ### Scan appears stuck
 

@@ -8,7 +8,7 @@ COMMON_PORTS = "21,22,25,53,80,110,143,443,3306,5432,6379,8080,8443"
 def run_nmap(target_url):
     try:
         parsed = urlparse(target_url)
-        hostname = parsed.netloc or parsed.path
+        hostname = parsed.hostname or parsed.path
         ip = socket.gethostbyname(hostname)
 
         nm = nmap.PortScanner()

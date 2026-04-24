@@ -35,6 +35,7 @@
         <div class="alert alert-warning">Your last code expired. Request a new code and then try again.</div>
       {% endif %}
       <form action="{{ url_for('auth.verify_email') }}" method="POST" class="form-stack">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-row">
           <label>Verification Code</label>
           <input type="text" name="code" placeholder="123456"
@@ -45,6 +46,7 @@
         <button type="submit">Verify Email</button>
       </form>
       <form action="{{ url_for('auth.resend_verification_code') }}" method="POST" class="form-stack">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <button type="submit">Resend Code</button>
       </form>
       <div class="footer">

@@ -24,6 +24,7 @@ import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from app.form_parser import get_forms
+from app.scanner.common import session_headers, should_stop_scan
 
 # ── Constants ────────────────────────────────────────────────────────────
 
@@ -52,9 +53,7 @@ from app.scanner.payloads import (
 
 def _session():
     s = requests.Session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (compatible; WebVulnScan/1.0)"
-    })
+    s.headers.update(session_headers())
     return s
 
 
@@ -110,7 +109,7 @@ def _find_forms_with_parser(target):
         return []
 
 
-def _find_login_forms(targets, session):
+def _find_login_forms(targets, session, should_stop=None):
     """
     Crawl the target page and return a list of dicts:
       { url, action, user_field, pass_field, extra_fields }
@@ -118,6 +117,8 @@ def _find_login_forms(targets, session):
     forms = []
     seen = set()
     for target in targets:
+        if should_stop_scan(should_stop):
+            break
         try:
             r = session.get(target, timeout=REQUEST_TIMEOUT, allow_redirects=True)
             soup = BeautifulSoup(r.text, "html.parser")
@@ -200,7 +201,7 @@ def _find_login_forms(targets, session):
     return forms
 
 
-def _test_request_rate_limit(session, target):
+def _test_request_rate_limit(session, target, should_stop=None):
     result = {
         "tested": True,
         "requests_sent": 0,
@@ -214,6 +215,8 @@ def _test_request_rate_limit(session, target):
     durations = []
 
     for index in range(1, RATE_LIMIT_TEST_MAX_REQUESTS + 1):
+        if should_stop_scan(should_stop):
+            break
         started = time.time()
         try:
             response = session.get(target, timeout=REQUEST_TIMEOUT, allow_redirects=False)
@@ -317,7 +320,7 @@ def _attempt_login(session, form, username, password):
 
 # ── Public API ───────────────────────────────────────────────────────────
 
-def scan_bruteforce(target, pages=None, wordlist=None):
+def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
     """
     Main entry point.
 
@@ -373,6 +376,8 @@ def scan_bruteforce(target, pages=None, wordlist=None):
         # Probe with malicious payloads
         probe_url = target.rstrip("/") + "/?q="
         for payload in WAF_PROBE_PAYLOADS:
+            if should_stop_scan(should_stop):
+                break
             try:
                 r = session.get(probe_url + payload, timeout=REQUEST_TIMEOUT,
                                 allow_redirects=False)
@@ -409,12 +414,12 @@ def scan_bruteforce(target, pages=None, wordlist=None):
         # WAF detected — skip brute-force (would be blocked anyway)
         return result
 
-    result["rate_limit_probe"] = _test_request_rate_limit(session, target)
+    result["rate_limit_probe"] = _test_request_rate_limit(session, target, should_stop=should_stop)
 
     # ── Step 2: Find login forms ─────────────────────────────────────────
     candidate_pages = _iter_candidate_pages(target, pages=pages)
     result["candidate_pages"] = len(candidate_pages)
-    forms = _find_login_forms(candidate_pages, session)
+    forms = _find_login_forms(candidate_pages, session, should_stop=should_stop)
     result["login_forms"] = len(forms)
 
     if not forms:
@@ -422,10 +427,14 @@ def scan_bruteforce(target, pages=None, wordlist=None):
 
     # ── Step 3: Brute-force ──────────────────────────────────────────────
     for form in forms:
+        if should_stop_scan(should_stop):
+            break
         found = False
         if not form.get("user_field"):
             continue
         for username, password in wordlist:
+            if should_stop_scan(should_stop):
+                break
             result["attempts"] += 1
             attempt = _attempt_login(session, form, username, password)
             time.sleep(0.1)   # throttle
