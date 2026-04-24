@@ -7,5 +7,5 @@ __pycache__/
 .vscode/
 .DS_Store
 .codex
-
+payloads/
 .env

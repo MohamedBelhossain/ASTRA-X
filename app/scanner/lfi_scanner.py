@@ -1,13 +1,16 @@
-import requests
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-from app.scanner.payloads import LFI_PAYLOADS as PAYLOADS, LFI_COMMON_PARAMS as COMMON_PARAMS
+import re
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-REQUEST_TIMEOUT = 3
+import requests
+
+from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.payloads import LFI_COMMON_PARAMS as COMMON_PARAMS, LFI_PAYLOADS as PAYLOADS
+
+REQUEST_TIMEOUT = 4
 
 session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-})
+session.headers.update(session_headers())
+
 
 def inject_payload(url, param, payload):
     parsed = urlparse(url)
@@ -16,27 +19,24 @@ def inject_payload(url, param, payload):
     new_query = urlencode(params, doseq=True)
     return urlunparse(parsed._replace(query=new_query))
 
-def generate_variants(original, payload):
-    return list(dict.fromkeys([
-        payload,
-        original + payload,
-        payload + original,
-    ]))
 
-#
+def generate_variants(original, payload):
+    return list(dict.fromkeys([payload, original + payload, payload + original]))
+
+
 def detect_lfi(response):
-    text = response.text.lower()
+    text = (response.text or "").lower()
     if "root:x:" in text and "/bin" in text:
         return "Linux passwd file"
-    if "[extensions]" in text and "ini" in text:
+    if "[extensions]" in text and "for 16-bit app support" in text:
         return "Windows ini file"
     sample = response.text[:200]
-    import re
-    if len(response.text) > 200 and re.fullmatch(r'[A-Za-z0-9+/=\n]+', sample):
+    if len(response.text) > 200 and re.fullmatch(r"[A-Za-z0-9+/=\n]+", sample):
         return "Base64 encoded file (PHP wrapper)"
     return None
 
-def scan_lfi(url):
+
+def scan_lfi(url, should_stop=None):
     print(f"\n[LFI] Scanning: {url}")
     results = []
     found = set()
@@ -51,16 +51,23 @@ def scan_lfi(url):
         all_params = COMMON_PARAMS[:4]
 
     for param in all_params:
-        original_value = query_params.get(param, [""])[0]
+        if should_stop_scan(should_stop):
+            break
 
-        if any(s in param.lower() for s in ["file", "path", "page", "include"]):
+        original_value = query_params.get(param, [""])[0]
+        if any(token in param.lower() for token in ["file", "path", "page", "include"]):
             print(f"  [!] High value parameter: {param}")
 
         detected = False
         for payload in PAYLOADS:
+            if should_stop_scan(should_stop):
+                break
             variants = generate_variants(original_value, payload)
 
             for variant in variants:
+                if should_stop_scan(should_stop):
+                    break
+
                 key = (param, variant)
                 if key in found:
                     continue
@@ -68,24 +75,30 @@ def scan_lfi(url):
                 test_url = inject_payload(url, param, variant)
                 try:
                     response = session.get(test_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
-                    detection = detect_lfi(response)
-
-                    if detection:
-                        found.add(key)
-                        results.append({
-                            "url": test_url,
-                            "param": param,
-                            "payload": variant,
-                            "type": "LFI / Path Traversal",
-                            "evidence": detection,
-                            "confidence": "high"
-                        })
-                        print(f"  [VULN] LFI → param='{param}' | {detection}")
-                        detected = True
-                        break
-
                 except requests.exceptions.RequestException:
                     continue
+
+                detection = detect_lfi(response)
+                if detection:
+                    found.add(key)
+                    results.append(
+                        {
+                            "url": test_url,
+                            "param": param,
+                            "parameter": param,
+                            "payload": variant,
+                            "type": "LFI / Path Traversal",
+                            "method": "GET",
+                            "evidence": detection,
+                            "evidence_excerpt": response_excerpt(response.text, detection.split()[0]),
+                            "severity": "critical",
+                            "confidence": "high",
+                            "status_code": response.status_code,
+                        }
+                    )
+                    print(f"  [VULN] LFI -> param='{param}' | {detection}")
+                    detected = True
+                    break
 
             if detected:
                 break

@@ -31,6 +31,7 @@
       {% endwith %}
 
       <form action="{{ url_for('auth.login') }}" method="POST" class="form-stack">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-row">
           <label>Email</label>
           <input type="email" name="email" placeholder="you@example.com" required>

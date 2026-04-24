@@ -380,7 +380,10 @@
         <div class="hero-side">
           <div class="scan-actions">
             <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
-            <a href="/logout" class="back-link">Logout</a>
+            <form action="{{ url_for('auth.logout') }}" method="POST" style="margin:0;">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="back-link" style="background:none; border:none; padding:0; cursor:pointer;">Logout</button>
+            </form>
           </div>
 
           <div class="field-row" style="margin-bottom:14px;">
@@ -402,6 +405,7 @@
           </div>
 
           <form id="scan-form" class="form-stack">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-row">
               <label>Target URL</label>
               <input id="url-input" type="text" name="url" placeholder="https://example.com" required>
@@ -439,6 +443,42 @@
     </div>
   </section>
 </div>
+
+{% if scan_history %}
+<section class="shell-card">
+  <div class="window-bar">
+    <span class="window-dot r"></span>
+    <span class="window-dot y"></span>
+    <span class="window-dot g"></span>
+    <span class="window-title">Recent Scans</span>
+  </div>
+  <div class="page-panel">
+    <div class="section">
+      <h3>Recent Scans</h3>
+      <table>
+        <thead>
+          <tr><th>Target</th><th>Mode</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for item in scan_history %}
+            <tr>
+              <td><strong>{{ item.target_url }}</strong></td>
+              <td>{{ item.scan_mode | upper }}</td>
+              <td>{{ item.status | upper }}</td>
+              <td>{{ item.created_at or "—" }}</td>
+              <td>
+                <a href="{{ url_for('report', scan_id=item.scan_id) }}">Report</a>
+                &nbsp;·&nbsp;
+                <a href="{{ url_for('export_json', scan_id=item.scan_id) }}">JSON</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
 
 <!-- ── Live scan overlay ────────────────────────────────────── -->
 <div id="progress-overlay" class="progress-overlay hidden">
@@ -527,6 +567,7 @@
       <div class="prog-track">
         <div class="prog-fill" id="prog-fill" style="width:0%"></div>
       </div>
+      <button class="go-report show" id="cancel-scan" type="button" style="display:inline-block; background:#222; color:#ddd;">Cancel Scan</button>
       <a class="go-report" id="go-report" href="#">View Report →</a>
     </footer>
 
@@ -548,12 +589,34 @@
   const progFill  = document.getElementById("prog-fill");
   const goReport  = document.getElementById("go-report");
   const findList  = document.getElementById("findings-list");
-  const noFinds   = document.getElementById("no-findings");
+  let noFinds   = document.getElementById("no-findings");
   const detPanel  = document.getElementById("detail-panel");
+  const cancelBtn = document.getElementById("cancel-scan");
+  const csrfToken = form.querySelector('input[name="_csrf_token"]').value;
 
   const PHASE_PCT = { nmap:10, crawl:20, sqli:45, xss:60, lfi:72, brute:82, files:90, subd:96 };
   let scanStart = 0;
   let activeItem = null;
+  let activeScanId = null;
+
+  function resetOverlayState() {
+    terminal.innerHTML = "";
+    findList.innerHTML = '<div class="no-findings" id="no-findings">No findings yet…</div>';
+    noFinds = document.getElementById("no-findings");
+    detPanel.className = "detail-panel empty";
+    detPanel.innerHTML = '<div class="detail-empty-msg">← select a finding to inspect the request</div>';
+    goReport.classList.remove("show");
+    goReport.href = "#";
+    cancelBtn.style.display = "inline-block";
+    noFinds.style.display = "block";
+    activeItem = null;
+    ["nmap","crawl","sqli","xss","lfi","brute","files","subd"].forEach((name) => {
+      const item = document.getElementById(`ph-${name}`);
+      const count = document.getElementById(`pc-${name}`);
+      if (item) item.className = "phase-item";
+      if (count) count.textContent = "—";
+    });
+  }
 
   // ── Timestamp ──────────────────────────────────────────────
   function ts() {
@@ -692,19 +755,24 @@
     urlInput.readOnly = true;
     scanBtn.disabled  = true;
 
-    const formData = new FormData();
-    formData.append("url", target);
-    formData.append("scan_mode", selectedMode);
+    const formData = new FormData(form);
+    formData.set("url", target);
+    formData.set("scan_mode", selectedMode);
 
     let scanId;
     try {
-      const res  = await fetch("/start-scan", { method: "POST", body: formData });
+      const res  = await fetch("/start-scan", {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin"
+      });
       const data = await res.json();
 
       if (!res.ok || data.error) {
         throw new Error(data.error || "Failed to start scan.");
       }
       scanId = data.scan_id;
+      activeScanId = scanId;
       ovTarget.textContent = `${data.target} • ${data.scan_mode}`;
     } catch (err) {
       errBanner.textContent = err.message;
@@ -719,6 +787,7 @@
     // Show overlay, connect SSE
     scanStart = Date.now();
     curPct = 0;
+    resetOverlayState();
     overlay.classList.remove("hidden");
     ovStatus.textContent = "Connected — scan starting…";
     addLog("Scan engine connected.", "info");
@@ -744,20 +813,50 @@
         es.close();
         setProgress(100, "Scan complete!");
         addLog("✓ All phases complete — report ready.", "success");
-        goReport.href = `/report/${ev.data.scan_id}`;
-        goReport.classList.add("show");
+    goReport.href = `/report/${ev.data.scan_id}`;
+        if (ev.data.status === "completed") {
+          goReport.classList.add("show");
+        } else {
+          goReport.classList.remove("show");
+        }
+        cancelBtn.style.display = "none";
+        if (ev.data.status === "cancelled") {
+          addLog("Scan was cancelled before completion.", "warn");
+        }
       }
 
       if (ev.type === "error") {
         es.close();
         setProgress(100, "Scan failed.");
         addLog(`Error: ${ev.data.msg}`, "error");
+        cancelBtn.style.display = "none";
       }
     };
 
     es.onerror = () => {
       addLog("Connection to scan engine lost.", "error");
     };
+  });
+
+  cancelBtn.addEventListener("click", async () => {
+    if (!activeScanId) return;
+    cancelBtn.disabled = true;
+    try {
+      const res = await fetch(`/cancel-scan/${activeScanId}`, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to cancel this scan.");
+      }
+      addLog(`Cancellation status: ${data.status}.`, "warn");
+      ovStatus.textContent = "Cancelling scan...";
+    } catch (err) {
+      addLog(err.message, "error");
+    } finally {
+      cancelBtn.disabled = false;
+    }
   });
 </script>
 
