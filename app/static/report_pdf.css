@@ -88,18 +88,20 @@ h3 {
 }
 
 .summary-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-top: 16px;
 }
 
 .summary-badge {
-  min-width: 120px;
+  min-width: 0;
+  min-height: 70px;
   padding: 12px 14px;
   border: 1px solid #ddd;
   border-radius: 10px;
   background: #f8f8f8;
+  overflow-wrap: anywhere;
 }
 
 .summary-badge.badge-danger {
@@ -114,8 +116,9 @@ h3 {
 
 .summary-num {
   display: block;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
+  line-height: 1.1;
   color: #111;
 }
 
@@ -173,6 +176,7 @@ td {
 .vuln-high     { border-left: 4px solid #f57c00; }
 .vuln-medium   { border-left: 4px solid #fbc02d; }
 .vuln-low      { border-left: 4px solid #689f38; }
+.vuln-info     { border-left: 4px solid #607d8b; }
 
 .vuln-header {
   display: flex;

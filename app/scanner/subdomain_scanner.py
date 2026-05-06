@@ -58,7 +58,7 @@ def _get_severity(subdomain, status_code):
     return "low"
 
 
-def scan_subdomains(base_url, max_workers=20, should_stop=None):
+def scan_subdomains(base_url, max_workers=20, should_stop=None, on_progress=None, on_finding=None):
     print(f"\n[SUBDOMAIN] Scanning: {base_url}")
 
     parsed = urlparse(base_url)
@@ -68,6 +68,7 @@ def scan_subdomains(base_url, max_workers=20, should_stop=None):
     candidates = sorted(set(SUBDOMAINS))
 
     findings = []
+    checked = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(_check_subdomain, subdomain, domain, scheme): subdomain
@@ -76,10 +77,15 @@ def scan_subdomains(base_url, max_workers=20, should_stop=None):
         for future in as_completed(futures):
             if should_stop_scan(should_stop):
                 break
+            checked += 1
+            if on_progress:
+                on_progress({"checked": checked, "total": len(candidates), "subdomain": futures[future]})
             result = future.result()
             if result:
                 print(f"  [FOUND] {result['subdomain']} -> {result['ip']} ({result['status']})")
                 findings.append(result)
+                if on_finding:
+                    on_finding(result)
 
     order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda item: (order.get(item["severity"], 3), item["subdomain"]))

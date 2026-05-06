@@ -4,6 +4,8 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests as req
 from dotenv import load_dotenv
@@ -15,8 +17,10 @@ from app.auth import auth, bcrypt, mail
 from app.models import RateLimitBucket, ResetToken, ScanRecord, User, mongo, serialize_document
 from app.scanner.analyser import analyse_nmap
 from app.scanner.bruteforce_scanner import scan_bruteforce
+from app.scanner.cms_scanner import scan_cms
 from app.scanner.crawler import crawl
 from app.scanner.file_exposure import scan_file_exposure
+from app.scanner.header_scanner import scan_security_headers
 from app.scanner.lfi_scanner import scan_lfi
 from app.scanner.nmap import run_nmap
 from app.scanner.sqli_scanner import scan_sqli
@@ -72,6 +76,12 @@ SCAN_RATE_LIMIT_MAX = int(os.environ.get("SCAN_RATE_LIMIT_MAX", "5"))
 SCAN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("SCAN_RATE_LIMIT_WINDOW_SECONDS", "3600"))
 MAX_ACTIVE_SCANS_PER_USER = int(os.environ.get("MAX_ACTIVE_SCANS_PER_USER", "1"))
 SCAN_WORKERS = int(os.environ.get("SCAN_WORKERS", "2"))
+INJECTION_WORKERS = int(os.environ.get("INJECTION_WORKERS", "12"))
+ACTIVE_TEST_MAX_PAGES = int(os.environ.get("ACTIVE_TEST_MAX_PAGES", "8"))
+LFI_MAX_PAGES = int(os.environ.get("LFI_MAX_PAGES", "12"))
+LFI_MAX_PARAMS = int(os.environ.get("LFI_MAX_PARAMS", "3"))
+LFI_MAX_PAYLOADS = int(os.environ.get("LFI_MAX_PAYLOADS", "6"))
+LFI_AGGRESSIVE = bool_env(os.environ.get("LFI_AGGRESSIVE"), default=False)
 ALLOW_PRIVATE_TARGETS = bool_env(os.environ.get("ALLOW_PRIVATE_TARGETS"), default=False)
 scan_executor = ThreadPoolExecutor(max_workers=SCAN_WORKERS)
 scan_jobs = {}
@@ -96,6 +106,13 @@ def _ensure_indexes():
         ResetToken.ensure_indexes()
         RateLimitBucket.ensure_indexes()
         ScanRecord.ensure_indexes()
+        if not getattr(app, "_interrupted_scans_recovered", False):
+            recovered = ScanRecord.mark_interrupted_active(
+                "Scan worker was interrupted by an application restart. Please start a new scan."
+            )
+            if recovered:
+                app.logger.warning("Marked %s interrupted scan(s) as failed after startup.", recovered)
+            app._interrupted_scans_recovered = True
         app._indexes_created = True
     except Exception as exc:
         app.logger.warning("Could not create indexes: %s", exc)
@@ -122,6 +139,25 @@ def default_report(scan_mode, target):
             "discovered_pages": 0,
         },
         "open_ports": [],
+        "cms_result": {
+            "detected": {
+                "detected": False,
+                "name": None,
+                "version": None,
+                "confidence": "none",
+                "evidence": [],
+            },
+            "cves": [],
+            "cve_source": "NVD",
+            "cve_lookup": "keyword",
+        },
+        "header_result": {
+            "url": target,
+            "status": None,
+            "headers": {},
+            "findings": [],
+            "error": None,
+        },
         "vulnerabilities": [],
         "xss_vulnerabilities": [],
         "lfi_vulnerabilities": [],
@@ -173,9 +209,22 @@ def vuln_event(scan_id, category, data):
     push(scan_id, "vuln", {"category": category, "data": serialize_document(data)})
 
 
+def crawl_page_event(scan_id, url, count):
+    ScanRecord.update_phase(scan_id, "crawl", "running", count=count)
+    push(scan_id, "crawl_page", {"url": url, "count": count})
+
+
+def port_event(scan_id, port):
+    push(scan_id, "port", serialize_document(port))
+
+
+def progress_event(scan_id, phase_name, data):
+    push(scan_id, "progress", {"phase": phase_name, **serialize_document(data)})
+
+
 def mark_skipped(scan_id, phase_name, reason):
     phase(scan_id, phase_name, "skipped", 0)
-    log(scan_id, f"Skipping {reason} in fast scan mode.", "warn")
+    log(scan_id, f"Skipping {reason}.", "warn")
 
 
 def get_active_scan_count_for_user(user_id):
@@ -249,6 +298,46 @@ def finding_request_data(category, finding):
     }
 
 
+def _has_query_params(url):
+    return bool(urlparse(url).query)
+
+
+def _canonical_url_key(url):
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "http").lower()
+    netloc = parsed.netloc.lower()
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
+def unique_scan_pages(target, pages):
+    ordered = []
+    seen = set()
+
+    for url in [target, *(pages or [])]:
+        key = _canonical_url_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(url)
+
+    return ordered
+
+
+def _is_lfi_candidate(url):
+    parsed = urlparse(url)
+    query = parsed.query.lower()
+    path = parsed.path.lower()
+    suspicious_tokens = ("file", "path", "page", "include", "template", "view", "doc")
+    return bool(query) and (
+        any(token in query for token in suspicious_tokens)
+        or any(token in path for token in suspicious_tokens)
+    )
+
+
 def finalize_scan(scan_id, status, report, last_error=None):
     ScanRecord.finalize_report(scan_id, report)
     ScanRecord.update_status(scan_id, status, last_error=last_error)
@@ -266,34 +355,141 @@ def run_scan(scan_id):
 
     try:
         ScanRecord.mark_running(scan_id)
+        phase(scan_id, "cms", "running")
+        phase(scan_id, "headers", "running")
         phase(scan_id, "nmap", "running")
         phase(scan_id, "crawl", "running")
         log(scan_id, f"Starting {scan_mode} scan on {target}...")
         log(scan_id, f"Queued worker picked up the scan using {SCAN_WORKERS} worker slot(s).")
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        pages = []
+        crawl_diagnostics = {}
+        analysed_result = []
+        cms_result = report["cms_result"]
+        header_result = report["header_result"]
+        seen_crawl_pages = set()
+
+        def on_crawl_page(url, count):
+            if url in seen_crawl_pages:
+                return
+            seen_crawl_pages.add(url)
+            crawl_page_event(scan_id, url, count)
+            log(scan_id, f"[CRAWL] Page {count}: {url}", "info")
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_names = {}
+            cms_future = executor.submit(
+                scan_cms,
+                target,
+                should_stop=lambda: should_stop(scan_id),
+            )
+            future_names[cms_future] = "cms"
+            header_future = executor.submit(
+                scan_security_headers,
+                target,
+                should_stop=lambda: should_stop(scan_id),
+            )
+            future_names[header_future] = "headers"
             nmap_future = executor.submit(run_nmap, target)
+            future_names[nmap_future] = "nmap"
             crawl_future = executor.submit(
                 crawl,
                 target,
                 should_stop=lambda: should_stop(scan_id),
                 return_diagnostics=True,
+                on_page=on_crawl_page,
             )
-            nmap_result = nmap_future.result()
-            crawl_result = crawl_future.result()
+            future_names[crawl_future] = "crawl"
+
+            for future in as_completed(future_names):
+                raise_if_cancelled(scan_id)
+                name = future_names[future]
+
+                if name == "cms":
+                    cms_result = future.result()
+                    report["cms_result"] = cms_result
+                    cms_cves = cms_result.get("cves", [])
+                    phase(scan_id, "cms", "done", len(cms_cves))
+                    cms_detected = cms_result.get("detected", {})
+                    if cms_detected.get("detected"):
+                        cms_label = cms_detected.get("name")
+                        if cms_detected.get("version"):
+                            cms_label = f"{cms_label} {cms_detected.get('version')}"
+                        log(
+                            scan_id,
+                            f"Detected CMS: {cms_label} ({cms_detected.get('confidence')} confidence). Found {len(cms_cves)} candidate CVE record(s).",
+                            "success" if not cms_cves else "warn",
+                        )
+                        for finding in cms_cves:
+                            vuln_event(scan_id, "cms", finding)
+                            log(
+                                scan_id,
+                                f"[CMS] Candidate CVE {finding.get('id')} for {cms_label}",
+                                "vuln",
+                                {
+                                    "method": "GET",
+                                    "url": finding.get("url"),
+                                    "param": cms_detected.get("name"),
+                                    "payload": cms_detected.get("version"),
+                                    "evidence": finding.get("description"),
+                                    "confidence": finding.get("confidence"),
+                                    "severity": finding.get("severity"),
+                                },
+                            )
+                    else:
+                        log(scan_id, "No known CMS fingerprint was detected.", "info")
+
+                elif name == "headers":
+                    header_result = future.result()
+                    report["header_result"] = header_result
+                    header_findings = header_result.get("findings", [])
+                    phase(scan_id, "headers", "done", len(header_findings))
+                    if header_result.get("error"):
+                        log(scan_id, f"Security header check failed: {header_result['error']}", "warn")
+                    else:
+                        log(
+                            scan_id,
+                            f"Security header check found {len(header_findings)} issue(s).",
+                            "success" if not header_findings else "warn",
+                        )
+                        for finding in header_findings:
+                            vuln_event(scan_id, "headers", finding)
+                            log(
+                                scan_id,
+                                f"[HEADERS] {finding.get('type')} at {finding.get('url')}",
+                                "vuln",
+                                {
+                                    "method": "GET",
+                                    "url": finding.get("url"),
+                                    "param": finding.get("header"),
+                                    "payload": None,
+                                    "evidence": finding.get("evidence"),
+                                    "confidence": "observed",
+                                    "severity": finding.get("severity"),
+                                },
+                            )
+
+                elif name == "nmap":
+                    nmap_result = future.result()
+                    analysed_result = analyse_nmap(nmap_result)
+                    report["open_ports"] = analysed_result
+                    phase(scan_id, "nmap", "done", len(analysed_result))
+                    for port in analysed_result:
+                        port_event(scan_id, port)
+                    log(scan_id, f"Found {len(analysed_result)} open port(s).", "success")
+
+                elif name == "crawl":
+                    crawl_result = future.result()
+                    pages = unique_scan_pages(target, crawl_result.get("pages", []))
+                    crawl_diagnostics = crawl_result.get("diagnostics", {})
+                    report["pages"] = pages
+                    report["pages_scanned"] = len(pages)
+                    report["crawl_diagnostics"] = crawl_diagnostics
+                    phase(scan_id, "crawl", "done", len(pages))
+                    log(scan_id, f"Crawl complete: {len(pages)} page(s) discovered.", "success")
 
         raise_if_cancelled(scan_id)
 
-        pages = crawl_result.get("pages", [])
-        crawl_diagnostics = crawl_result.get("diagnostics", {})
-        analysed_result = analyse_nmap(nmap_result)
-        report["open_ports"] = analysed_result
-        report["pages"] = pages
-        report["pages_scanned"] = len(pages)
-        report["crawl_diagnostics"] = crawl_diagnostics
-
-        phase(scan_id, "nmap", "done", len(analysed_result))
-        phase(scan_id, "crawl", "done", len(pages))
         log(
             scan_id,
             f"Found {len(analysed_result)} open port(s), {len(pages)} page(s) to test.",
@@ -336,23 +532,11 @@ def run_scan(scan_id):
 
         crawl_protected = bool(crawl_diagnostics.get("anti_bot_detected") and len(pages) <= 1)
         if crawl_protected:
-            for phase_name, reason in (
-                ("sqli", "SQL injection checks"),
-                ("xss", "XSS checks"),
-                ("lfi", "LFI checks"),
-                ("brute", "brute-force checks"),
-                ("files", "file exposure checks"),
-                ("subd", "subdomain enumeration"),
-            ):
-                mark_skipped(scan_id, phase_name, reason)
             log(
                 scan_id,
-                "Stopping after crawl because the target appears protected and did not expose enough reachable pages for meaningful active testing.",
+                "The target appears protected, but active checks will still run against the reachable page(s). Some checks may return no findings if forms or query parameters are blocked.",
                 "warn",
             )
-            log(scan_id, "Scan complete. Building report...", "success")
-            finalize_scan(scan_id, "completed", report)
-            return
 
         phase(scan_id, "sqli", "running")
         phase(scan_id, "xss", "running")
@@ -361,19 +545,22 @@ def run_scan(scan_id):
             phase(scan_id, "brute", "pending")
             log(scan_id, "Injecting payloads across all discovered pages...")
         else:
-            mark_skipped(scan_id, "lfi", "LFI checks")
-            mark_skipped(scan_id, "brute", "brute-force checks")
-            mark_skipped(scan_id, "files", "file exposure checks")
-            mark_skipped(scan_id, "subd", "subdomain enumeration")
+            mark_skipped(scan_id, "lfi", "LFI checks in fast scan mode")
+            mark_skipped(scan_id, "brute", "brute-force checks in fast scan mode")
+            mark_skipped(scan_id, "files", "file exposure checks in fast scan mode")
+            mark_skipped(scan_id, "subd", "subdomain enumeration in fast scan mode")
             log(scan_id, "Fast mode enabled: running only the quickest core checks.", "warn")
 
         sqli_vulns = []
         xss_vulns = []
         lfi_vulns = []
         seen_findings = set()
+        finding_lock = Lock()
+        progress_counts = {"sqli": 0, "xss": 0, "lfi": 0, "brute": 0, "files": 0, "subd": 0}
+        progress_by_item = {name: {} for name in progress_counts}
 
-        def collect(category, findings, sink):
-            for finding in findings:
+        def collect_one(category, finding, sink):
+            with finding_lock:
                 signature = (
                     category,
                     finding.get("url"),
@@ -382,46 +569,131 @@ def run_scan(scan_id):
                     finding.get("evidence"),
                 )
                 if signature in seen_findings:
-                    continue
+                    return
                 seen_findings.add(signature)
                 sink.append(finding)
-                vuln_event(scan_id, category, finding)
-                log(
-                    scan_id,
-                    f"[{category.upper()}] {finding.get('type', category)} on {finding.get('parameter') or finding.get('param') or '?'} at {finding.get('url', '?')}",
-                    "vuln",
-                    finding_request_data(category, finding),
-                )
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            sqli_futures = {executor.submit(scan_sqli, page, should_stop=lambda: should_stop(scan_id)): page for page in pages}
-            xss_futures = {executor.submit(scan_xss, page, should_stop=lambda: should_stop(scan_id)): page for page in pages}
-            lfi_futures = (
-                {executor.submit(scan_lfi, page, should_stop=lambda: should_stop(scan_id)): page for page in pages}
-                if scan_mode == "deep"
-                else {}
+            vuln_event(scan_id, category, finding)
+            log(
+                scan_id,
+                f"[{category.upper()}] {finding.get('type', category)} on {finding.get('parameter') or finding.get('param') or '?'} at {finding.get('url', '?')}",
+                "vuln",
+                finding_request_data(category, finding),
             )
 
-            for future in as_completed(sqli_futures):
-                raise_if_cancelled(scan_id)
-                collect("sqli", future.result(), sqli_vulns)
+        def collect(category, findings, sink):
+            for finding in findings:
+                collect_one(category, finding, sink)
 
-            for future in as_completed(xss_futures):
-                raise_if_cancelled(scan_id)
-                collect("xss", future.result(), xss_vulns)
+        def progress_callback(category):
+            def _callback(data):
+                data = dict(data)
+                raw_checked = int(data.get("checked") or 0)
+                item_key = (
+                    data.get("url")
+                    or data.get("path")
+                    or data.get("subdomain")
+                    or data.get("stage")
+                    or "__phase"
+                )
+                previous = progress_by_item[category].get(item_key, 0)
+                progress_by_item[category][item_key] = max(raw_checked, previous)
+                progress_counts[category] = sum(progress_by_item[category].values())
+                data["checked"] = progress_counts[category]
+                progress_event(scan_id, category, data)
+            return _callback
+
+        lfi_pages = []
+        if scan_mode == "deep":
+            suspicious_lfi_pages = [page for page in pages if _is_lfi_candidate(page)]
+            other_query_pages = [
+                page
+                for page in pages
+                if _has_query_params(page) and page not in suspicious_lfi_pages
+            ]
+            lfi_pages = (suspicious_lfi_pages + other_query_pages)[:LFI_MAX_PAGES]
+            if len(lfi_pages) < len(pages):
+                log(
+                    scan_id,
+                    f"LFI smart mode: testing {len(lfi_pages)} query page(s) instead of all {len(pages)} crawled page(s).",
+                    "info",
+                )
+
+        active_pages = pages[:ACTIVE_TEST_MAX_PAGES]
+        if len(active_pages) < len(pages):
+            log(
+                scan_id,
+                f"Active checks limited to {len(active_pages)} page(s) out of {len(pages)} discovered page(s) to avoid long-running duplicate or slow target scans.",
+                "warn",
+            )
+
+        with ThreadPoolExecutor(max_workers=INJECTION_WORKERS) as executor:
+            future_info = {}
+            remaining_by_category = {"sqli": 0, "xss": 0, "lfi": 0}
+
+            for page in active_pages:
+                future = executor.submit(
+                    scan_sqli,
+                    page,
+                    should_stop=lambda: should_stop(scan_id),
+                    on_progress=progress_callback("sqli"),
+                    on_finding=lambda finding: collect_one("sqli", finding, sqli_vulns),
+                )
+                future_info[future] = ("sqli", page, sqli_vulns)
+                remaining_by_category["sqli"] += 1
+
+                future = executor.submit(
+                    scan_xss,
+                    page,
+                    should_stop=lambda: should_stop(scan_id),
+                    on_progress=progress_callback("xss"),
+                    on_finding=lambda finding: collect_one("xss", finding, xss_vulns),
+                )
+                future_info[future] = ("xss", page, xss_vulns)
+                remaining_by_category["xss"] += 1
 
             if scan_mode == "deep":
-                for future in as_completed(lfi_futures):
-                    raise_if_cancelled(scan_id)
-                    collect("lfi", future.result(), lfi_vulns)
+                for page in lfi_pages:
+                    future = executor.submit(
+                        scan_lfi,
+                        page,
+                        should_stop=lambda: should_stop(scan_id),
+                        on_progress=progress_callback("lfi"),
+                        on_finding=lambda finding: collect_one("lfi", finding, lfi_vulns),
+                        max_params=LFI_MAX_PARAMS,
+                        max_payloads=LFI_MAX_PAYLOADS,
+                        aggressive=LFI_AGGRESSIVE,
+                    )
+                    future_info[future] = ("lfi", page, lfi_vulns)
+                    remaining_by_category["lfi"] += 1
+
+            for future in as_completed(future_info):
+                raise_if_cancelled(scan_id)
+                category, page, sink = future_info[future]
+                try:
+                    collect(category, future.result(), sink)
+                except Exception as exc:
+                    log(scan_id, f"{category.upper()} checks failed on {page}: {exc}", "error")
+
+                remaining_by_category[category] -= 1
+                if remaining_by_category[category] == 0:
+                    count = {
+                        "sqli": len(sqli_vulns),
+                        "xss": len(xss_vulns),
+                        "lfi": len(lfi_vulns),
+                    }[category]
+                    phase(scan_id, category, "done", count)
+                    log(scan_id, f"{category.upper()} checks finished with {count} finding(s).", "success")
 
         report["vulnerabilities"] = sqli_vulns
         report["xss_vulnerabilities"] = xss_vulns
         report["lfi_vulnerabilities"] = lfi_vulns
 
-        phase(scan_id, "sqli", "done", len(sqli_vulns))
-        phase(scan_id, "xss", "done", len(xss_vulns))
-        if scan_mode == "deep":
+        if remaining_by_category["sqli"] == 0 and not active_pages:
+            phase(scan_id, "sqli", "done", len(sqli_vulns))
+        if remaining_by_category["xss"] == 0 and not active_pages:
+            phase(scan_id, "xss", "done", len(xss_vulns))
+        if scan_mode == "deep" and remaining_by_category["lfi"] == 0 and not lfi_pages:
             phase(scan_id, "lfi", "done", len(lfi_vulns))
         log(
             scan_id,
@@ -438,6 +710,8 @@ def run_scan(scan_id):
                 target,
                 pages=pages,
                 should_stop=lambda: should_stop(scan_id),
+                on_progress=progress_callback("brute"),
+                on_finding=lambda finding: collect_one("bruteforce", finding, report["bruteforce_result"]["credentials_found"]),
             )
             raise_if_cancelled(scan_id)
 
@@ -464,38 +738,55 @@ def run_scan(scan_id):
                 finding.setdefault("severity", "critical")
                 finding.setdefault("confidence", "confirmed")
                 finding.setdefault("evidence", "Valid credentials accepted by target")
-                vuln_event(scan_id, "bruteforce", finding)
-                log(
-                    scan_id,
-                    f"[BRUTE FORCE] Valid credentials found for {finding.get('login_url', finding.get('url', '?'))}",
-                    "vuln",
-                    finding_request_data("bruteforce", finding),
-                )
+                collect_one("bruteforce", finding, report["bruteforce_result"]["credentials_found"])
 
             phase(scan_id, "files", "running")
             phase(scan_id, "subd", "running")
             log(scan_id, "Checking file exposure and enumerating subdomains...")
 
             with ThreadPoolExecutor(max_workers=2) as executor:
+                followup_futures = {}
                 file_future = executor.submit(
                     scan_file_exposure,
                     target,
                     should_stop=lambda: should_stop(scan_id),
+                    on_progress=progress_callback("files"),
+                    on_finding=lambda finding: collect_one("files", finding, report["file_findings"]),
                 )
+                followup_futures[file_future] = "files"
                 subdomain_future = executor.submit(
                     scan_subdomains,
                     target,
                     should_stop=lambda: should_stop(scan_id),
+                    on_progress=progress_callback("subd"),
+                    on_finding=lambda finding: collect_one("subd", finding, report["subdomain_findings"]),
                 )
-                file_findings = file_future.result()
-                subdomain_findings = subdomain_future.result()
+                followup_futures[subdomain_future] = "subd"
+                file_findings = []
+                subdomain_findings = []
+
+                for future in as_completed(followup_futures):
+                    raise_if_cancelled(scan_id)
+                    category = followup_futures[future]
+                    try:
+                        findings = future.result()
+                    except Exception as exc:
+                        log(scan_id, f"{category.upper()} checks failed: {exc}", "error")
+                        findings = []
+
+                    if category == "files":
+                        file_findings = findings
+                        report["file_findings"] = file_findings
+                    else:
+                        subdomain_findings = findings
+                        report["subdomain_findings"] = subdomain_findings
+
+                    phase(scan_id, category, "done", len(findings))
+                    log(scan_id, f"{category.upper()} checks finished with {len(findings)} finding(s).", "success")
 
             raise_if_cancelled(scan_id)
             report["file_findings"] = file_findings
             report["subdomain_findings"] = subdomain_findings
-
-            phase(scan_id, "files", "done", len(file_findings))
-            phase(scan_id, "subd", "done", len(subdomain_findings))
             log(
                 scan_id,
                 f"Found {len(file_findings)} exposed file(s), {len(subdomain_findings)} subdomain(s).",

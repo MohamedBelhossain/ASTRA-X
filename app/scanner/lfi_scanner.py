@@ -36,7 +36,25 @@ def detect_lfi(response):
     return None
 
 
-def scan_lfi(url, should_stop=None):
+def _ordered_lfi_params(existing_params):
+    high_value = [
+        param
+        for param in existing_params
+        if any(token in param.lower() for token in ["file", "path", "page", "include", "template", "view", "doc"])
+    ]
+    ordered = high_value + [param for param in existing_params if param not in high_value]
+    return list(dict.fromkeys(ordered))
+
+
+def scan_lfi(
+    url,
+    should_stop=None,
+    on_progress=None,
+    on_finding=None,
+    max_params=4,
+    max_payloads=8,
+    aggressive=False,
+):
     print(f"\n[LFI] Scanning: {url}")
     results = []
     found = set()
@@ -46,9 +64,18 @@ def scan_lfi(url, should_stop=None):
     existing_params = list(query_params.keys())
 
     if existing_params:
-        all_params = list(dict.fromkeys(existing_params + COMMON_PARAMS))
+        all_params = _ordered_lfi_params(existing_params)
+        if aggressive:
+            all_params = list(dict.fromkeys(all_params + COMMON_PARAMS))
+    elif aggressive:
+        all_params = COMMON_PARAMS[:max_params]
     else:
-        all_params = COMMON_PARAMS[:4]
+        print("  [-] No query parameters, skipping smart LFI checks.")
+        return results
+
+    all_params = all_params[:max_params]
+    payloads = PAYLOADS[:max_payloads]
+    checked = 0
 
     for param in all_params:
         if should_stop_scan(should_stop):
@@ -59,7 +86,7 @@ def scan_lfi(url, should_stop=None):
             print(f"  [!] High value parameter: {param}")
 
         detected = False
-        for payload in PAYLOADS:
+        for payload in payloads:
             if should_stop_scan(should_stop):
                 break
             variants = generate_variants(original_value, payload)
@@ -76,26 +103,33 @@ def scan_lfi(url, should_stop=None):
                 try:
                     response = session.get(test_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
                 except requests.exceptions.RequestException:
+                    checked += 1
+                    if on_progress:
+                        on_progress({"url": url, "checked": checked, "param": param})
                     continue
 
+                checked += 1
+                if on_progress:
+                    on_progress({"url": url, "checked": checked, "param": param})
                 detection = detect_lfi(response)
                 if detection:
                     found.add(key)
-                    results.append(
-                        {
-                            "url": test_url,
-                            "param": param,
-                            "parameter": param,
-                            "payload": variant,
-                            "type": "LFI / Path Traversal",
-                            "method": "GET",
-                            "evidence": detection,
-                            "evidence_excerpt": response_excerpt(response.text, detection.split()[0]),
-                            "severity": "critical",
-                            "confidence": "high",
-                            "status_code": response.status_code,
-                        }
-                    )
+                    finding = {
+                        "url": test_url,
+                        "param": param,
+                        "parameter": param,
+                        "payload": variant,
+                        "type": "LFI / Path Traversal",
+                        "method": "GET",
+                        "evidence": detection,
+                        "evidence_excerpt": response_excerpt(response.text, detection.split()[0]),
+                        "severity": "critical",
+                        "confidence": "high",
+                        "status_code": response.status_code,
+                    }
+                    results.append(finding)
+                    if on_finding:
+                        on_finding(finding)
                     print(f"  [VULN] LFI -> param='{param}' | {detection}")
                     detected = True
                     break

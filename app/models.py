@@ -294,6 +294,25 @@ class ScanRecord:
             "pages_scanned": 0,
             "pages": [],
             "open_ports": [],
+            "cms_result": {
+                "detected": {
+                    "detected": False,
+                    "name": None,
+                    "version": None,
+                    "confidence": "none",
+                    "evidence": [],
+                },
+                "cves": [],
+                "cve_source": "NVD",
+                "cve_lookup": "keyword",
+            },
+            "header_result": {
+                "url": target_url,
+                "status": None,
+                "headers": {},
+                "findings": [],
+                "error": None,
+            },
             "vulnerabilities": [],
             "xss_vulnerabilities": [],
             "lfi_vulnerabilities": [],
@@ -404,6 +423,45 @@ class ScanRecord:
         return cls._col().count_documents(
             {"owner_id": owner_id, "status": {"$in": list(cls.ACTIVE_STATUSES)}}
         )
+
+    @classmethod
+    def mark_interrupted_active(cls, message):
+        docs = list(cls._col().find({"status": {"$in": list(cls.ACTIVE_STATUSES)}}))
+        now = utcnow()
+        for doc in docs:
+            scan_id = doc["scan_id"]
+            cls._col().update_one(
+                {"scan_id": scan_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "finished_at": now,
+                        "last_error": message,
+                        "cancel_requested": False,
+                    },
+                    "$push": {
+                        "events": {
+                            "$each": [
+                                {
+                                    "type": "log",
+                                    "data": {"msg": message, "level": "error"},
+                                    "created_at": now,
+                                },
+                                {
+                                    "type": "done",
+                                    "data": {
+                                        "scan_id": scan_id,
+                                        "status": "failed",
+                                        "error": message,
+                                    },
+                                    "created_at": now,
+                                },
+                            ]
+                        }
+                    },
+                },
+            )
+        return len(docs)
 
     @classmethod
     def list_for_user(cls, owner_id, limit=20):
