@@ -1,3 +1,4 @@
+import os
 import time
 from functools import lru_cache
 from urllib.parse import urljoin
@@ -13,6 +14,13 @@ from app.scanner.payloads import (
     SQLI_ERROR_SIGNATURES as SQL_ERRORS,
     SQLI_TIME_PAYLOADS as TIME_PAYLOADS,
 )
+
+REQUEST_TIMEOUT = int(os.environ.get("SQLI_REQUEST_TIMEOUT", "6"))
+SQLI_MAX_FORMS = int(os.environ.get("SQLI_MAX_FORMS", "3"))
+SQLI_MAX_PARAMS_PER_FORM = int(os.environ.get("SQLI_MAX_PARAMS_PER_FORM", "4"))
+SQLI_MAX_ERROR_PAYLOADS = int(os.environ.get("SQLI_MAX_ERROR_PAYLOADS", "4"))
+SQLI_MAX_BOOLEAN_PAIRS = int(os.environ.get("SQLI_MAX_BOOLEAN_PAIRS", "2"))
+SQLI_MAX_TIME_PAYLOADS = int(os.environ.get("SQLI_MAX_TIME_PAYLOADS", "1"))
 
 
 def _make_session():
@@ -38,7 +46,7 @@ def _resolve_action(base_url, action):
     return urljoin(base_url, action)
 
 
-def _send(method, url, data, timeout=10):
+def _send(method, url, data, timeout=REQUEST_TIMEOUT):
     try:
         started = time.time()
         if method == "post":
@@ -77,7 +85,7 @@ def _append(vulnerabilities, finding):
     vulnerabilities.append(finding)
 
 
-def scan_sqli(url, should_stop=None):
+def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
     print(f"\n[*] Scanning: {url}")
 
     vulnerabilities = []
@@ -91,11 +99,14 @@ def scan_sqli(url, should_stop=None):
 
     if not forms:
         print("  [-] No forms found.")
+        if on_progress:
+            on_progress({"url": url, "forms": 0, "checked": 0})
         return vulnerabilities
 
     print(f"  [+] Found {len(forms)} form(s).")
+    checked = 0
 
-    for form_idx, form in enumerate(forms):
+    for form_idx, form in enumerate(forms[:SQLI_MAX_FORMS]):
         if should_stop_scan(should_stop):
             break
 
@@ -103,7 +114,7 @@ def scan_sqli(url, should_stop=None):
         action = _resolve_action(url, raw_action)
         method = (form.get("method") or "get").lower().strip()
         inputs = form.get("inputs", [])
-        named_inputs = [field for field in inputs if field.get("name")]
+        named_inputs = [field for field in inputs if field.get("name")][:SQLI_MAX_PARAMS_PER_FORM]
 
         if not named_inputs:
             print(f"  [-] Form {form_idx + 1}: no named inputs, skipping.")
@@ -132,14 +143,19 @@ def scan_sqli(url, should_stop=None):
                 break
 
             param = target_input["name"]
+            if on_progress:
+                on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
 
             key = (action, param, "error-based")
             if key not in found_params:
-                for payload in ERROR_PAYLOADS:
+                for payload in ERROR_PAYLOADS[:SQLI_MAX_ERROR_PAYLOADS]:
                     if should_stop_scan(should_stop):
                         break
                     data = _build_data(inputs, param, payload)
                     response = _send(method, action, data)
+                    checked += 1
+                    if on_progress:
+                        on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
                     if response is None:
                         continue
 
@@ -149,22 +165,22 @@ def scan_sqli(url, should_stop=None):
                             f"  [VULN] Error-based SQLi -> param='{param}' "
                             f"payload='{payload}' matched='{matched}'"
                         )
-                        _append(
-                            vulnerabilities,
-                            {
-                                "type": "error-based",
-                                "url": action,
-                                "parameter": param,
-                                "payload": payload,
-                                "matched_error": matched,
-                                "method": method.upper(),
-                                "severity": "critical",
-                                "confidence": "confirmed",
-                                "evidence": matched,
-                                "evidence_excerpt": response_excerpt(response.text, matched),
-                                "status_code": response.status_code,
-                            },
-                        )
+                        finding = {
+                            "type": "error-based",
+                            "url": action,
+                            "parameter": param,
+                            "payload": payload,
+                            "matched_error": matched,
+                            "method": method.upper(),
+                            "severity": "critical",
+                            "confidence": "confirmed",
+                            "evidence": matched,
+                            "evidence_excerpt": response_excerpt(response.text, matched),
+                            "status_code": response.status_code,
+                        }
+                        _append(vulnerabilities, finding)
+                        if on_finding:
+                            on_finding(finding)
                         found_params.add(key)
                         break
 
@@ -172,36 +188,42 @@ def scan_sqli(url, should_stop=None):
             if key not in found_params:
                 data = _build_data(inputs, param, "'")
                 response = _send(method, action, data)
+                checked += 1
+                if on_progress:
+                    on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
                 if response is not None:
                     diff = abs(len(response.text) - baseline_len)
                     status_changed = response.status_code != baseline_status
                     if diff > 200 or (status_changed and diff > 80):
                         print(f"  [VULN] Response-diff SQLi -> param='{param}' diff={diff}")
-                        _append(
-                            vulnerabilities,
-                            {
-                                "type": "response-diff",
-                                "url": action,
-                                "parameter": param,
-                                "payload": "'",
-                                "response_diff": diff,
-                                "method": method.upper(),
-                                "severity": "medium",
-                                "confidence": "medium",
-                                "evidence": f"Response changed by {diff} bytes",
-                                "evidence_excerpt": response_excerpt(response.text),
-                                "status_code": response.status_code,
-                            },
-                        )
+                        finding = {
+                            "type": "response-diff",
+                            "url": action,
+                            "parameter": param,
+                            "payload": "'",
+                            "response_diff": diff,
+                            "method": method.upper(),
+                            "severity": "medium",
+                            "confidence": "medium",
+                            "evidence": f"Response changed by {diff} bytes",
+                            "evidence_excerpt": response_excerpt(response.text),
+                            "status_code": response.status_code,
+                        }
+                        _append(vulnerabilities, finding)
+                        if on_finding:
+                            on_finding(finding)
                         found_params.add(key)
 
             key = (action, param, "boolean-based")
             if key not in found_params:
-                for true_payload, false_payload in BOOLEAN_PAYLOADS:
+                for true_payload, false_payload in BOOLEAN_PAYLOADS[:SQLI_MAX_BOOLEAN_PAIRS]:
                     if should_stop_scan(should_stop):
                         break
                     true_response = _send(method, action, _build_data(inputs, param, true_payload))
                     false_response = _send(method, action, _build_data(inputs, param, false_payload))
+                    checked += 2
+                    if on_progress:
+                        on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
                     if true_response is None or false_response is None:
                         continue
 
@@ -211,31 +233,34 @@ def scan_sqli(url, should_stop=None):
                         print(
                             f"  [VULN] Boolean-based SQLi -> param='{param}' true/false diff={diff}"
                         )
-                        _append(
-                            vulnerabilities,
-                            {
-                                "type": "boolean-based",
-                                "url": action,
-                                "parameter": param,
-                                "payload": true_payload,
-                                "true_false_diff": diff,
-                                "method": method.upper(),
-                                "severity": "high",
-                                "confidence": "high",
-                                "evidence": f"True/false responses differ by {diff} bytes",
-                                "evidence_excerpt": response_excerpt(true_response.text),
-                                "status_code": true_response.status_code,
-                            },
-                        )
+                        finding = {
+                            "type": "boolean-based",
+                            "url": action,
+                            "parameter": param,
+                            "payload": true_payload,
+                            "true_false_diff": diff,
+                            "method": method.upper(),
+                            "severity": "high",
+                            "confidence": "high",
+                            "evidence": f"True/false responses differ by {diff} bytes",
+                            "evidence_excerpt": response_excerpt(true_response.text),
+                            "status_code": true_response.status_code,
+                        }
+                        _append(vulnerabilities, finding)
+                        if on_finding:
+                            on_finding(finding)
                         found_params.add(key)
                         break
 
             key = (action, param, "time-based")
             if key not in found_params:
-                for payload in TIME_PAYLOADS[:2]:
+                for payload in TIME_PAYLOADS[:SQLI_MAX_TIME_PAYLOADS]:
                     if should_stop_scan(should_stop):
                         break
                     response = _send(method, action, _build_data(inputs, param, payload), timeout=6)
+                    checked += 1
+                    if on_progress:
+                        on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
                     if response is None:
                         continue
                     delay = getattr(response, "elapsed_seconds", 0.0)
@@ -244,23 +269,23 @@ def scan_sqli(url, should_stop=None):
                             f"  [VULN] Time-based SQLi -> param='{param}' "
                             f"payload='{payload}' delay={delay:.2f}s"
                         )
-                        _append(
-                            vulnerabilities,
-                            {
-                                "type": "time-based",
-                                "url": action,
-                                "parameter": param,
-                                "payload": payload,
-                                "delay_seconds": round(delay, 2),
-                                "baseline_seconds": round(baseline_elapsed, 2),
-                                "method": method.upper(),
-                                "severity": "high",
-                                "confidence": "high",
-                                "evidence": f"Response delayed to {delay:.2f}s from {baseline_elapsed:.2f}s baseline",
-                                "evidence_excerpt": response_excerpt(response.text),
-                                "status_code": response.status_code,
-                            },
-                        )
+                        finding = {
+                            "type": "time-based",
+                            "url": action,
+                            "parameter": param,
+                            "payload": payload,
+                            "delay_seconds": round(delay, 2),
+                            "baseline_seconds": round(baseline_elapsed, 2),
+                            "method": method.upper(),
+                            "severity": "high",
+                            "confidence": "high",
+                            "evidence": f"Response delayed to {delay:.2f}s from {baseline_elapsed:.2f}s baseline",
+                            "evidence_excerpt": response_excerpt(response.text),
+                            "status_code": response.status_code,
+                        }
+                        _append(vulnerabilities, finding)
+                        if on_finding:
+                            on_finding(finding)
                         found_params.add(key)
                         break
 

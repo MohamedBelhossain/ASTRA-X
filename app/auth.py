@@ -1,4 +1,5 @@
 import os
+import random
 import secrets
 import string
 import time
@@ -25,6 +26,7 @@ mail = Mail()
 auth = Blueprint("auth", __name__)
 CODE_TTL_SECONDS = 600
 MIN_PASSWORD_LENGTH = int(os.environ.get("MIN_PASSWORD_LENGTH", "10"))
+CAPTCHA_TTL_SECONDS = 600
 
 
 def generate_code():
@@ -37,6 +39,43 @@ def normalize_email(email):
 
 def sanitize_code(code):
     return "".join(ch for ch in code if ch.isdigit())
+
+
+def _new_register_captcha():
+    left = random.randint(2, 12)
+    right = random.randint(2, 12)
+    session["register_captcha"] = {
+        "question": f"{left} + {right}",
+        "answer": str(left + right),
+        "expires_at": int(time.time()) + CAPTCHA_TTL_SECONDS,
+    }
+    session.modified = True
+    return session["register_captcha"]
+
+
+def _register_captcha():
+    captcha = session.get("register_captcha")
+    if not captcha or int(time.time()) > int(captcha.get("expires_at", 0)):
+        return _new_register_captcha()
+    return captcha
+
+
+def _captcha_matches(answer):
+    captcha = session.get("register_captcha") or {}
+    if int(time.time()) > int(captcha.get("expires_at", 0)):
+        return False
+    expected = str(captcha.get("answer", "")).strip()
+    provided = str(answer or "").strip()
+    return bool(expected and secrets.compare_digest(expected, provided))
+
+
+def _render_register(form_data=None):
+    return render_template(
+        "register.html",
+        form_data=form_data or {},
+        captcha=_register_captcha(),
+        min_password_length=MIN_PASSWORD_LENGTH,
+    )
 
 
 def _new_expiry_timestamp():
@@ -118,7 +157,16 @@ def register():
         email = normalize_email(request.form.get("email", ""))
         password = request.form.get("password", "").strip()
         confirm = request.form.get("confirm_password", "").strip()
+        captcha_answer = request.form.get("captcha_answer", "")
+        honeypot = request.form.get("company_website", "").strip()
         form_data = {"username": username, "email": email}
+
+        if honeypot:
+            current_app.logger.warning("Registration honeypot triggered for %s", email or "anonymous")
+            time.sleep(1)
+            flash("Unable to create this account. Please try again.", "danger")
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if not _enforce_rate_limit(
             "register",
@@ -127,30 +175,40 @@ def register():
             window_seconds=3600,
             message="Too many registration attempts. Try again in about {retry_after} seconds.",
         ):
-            return render_template("register.html", form_data=form_data)
+            return _render_register(form_data)
+
+        if not _captcha_matches(captcha_answer):
+            flash("Security check failed. Please solve the new challenge.", "danger")
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if not username or not email or not password or not confirm:
             flash("All fields are required.", "danger")
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if password != confirm:
             flash("Passwords do not match.", "danger")
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if len(password) < MIN_PASSWORD_LENGTH:
             flash(
                 f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
                 "danger",
             )
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if User.find_by_email(email):
             flash("Email already registered.", "danger")
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
         if User.find_by_username(username):
             flash("Username already taken.", "danger")
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
         pending_user = {
             "username": username,
@@ -170,12 +228,14 @@ def register():
                 "Verification email could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
                 "danger",
             )
-            return render_template("register.html", form_data=form_data)
+            _new_register_captcha()
+            return _render_register(form_data)
 
+        session.pop("register_captcha", None)
         flash("A 6-digit code has been sent to your email.", "success")
         return redirect(url_for("auth.verify_email"))
 
-    return render_template("register.html", form_data={})
+    return _render_register({})
 
 
 @auth.route("/verify", methods=["GET", "POST"])

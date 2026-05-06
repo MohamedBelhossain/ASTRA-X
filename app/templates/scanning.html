@@ -133,6 +133,35 @@
 
     /* Live vulns in sidebar */
     .live-vulns { padding: 4px 0; flex: 1; }
+    .live-list {
+      padding: 4px 20px 10px;
+      border-bottom: 1px solid var(--border);
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    .live-list.empty { color: #444; font-size: .78rem; }
+    .live-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-family: monospace;
+      font-size: .72rem;
+      color: #777;
+    }
+    .live-row strong {
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: .68rem;
+      min-width: 28px;
+    }
+    .live-row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .port-row strong { color: #6ab4ff; }
     .live-vuln-item {
       padding: 8px 20px;
       border-left: 3px solid transparent;
@@ -386,42 +415,63 @@
   <aside class="scan-sidebar">
     <div class="sidebar-section-title">Scan Phases</div>
     <div class="phase-list" id="phase-list">
-      <div class="phase-item" id="phase-nmap">
+      <div class="phase-item" id="phase-cms">
         <div class="phase-icon">1</div>
+        <span class="phase-label">CMS / CVE</span>
+        <span class="phase-count" id="cnt-cms">—</span>
+      </div>
+      <div class="phase-item" id="phase-headers">
+        <div class="phase-icon">2</div>
+        <span class="phase-label">Security Headers</span>
+        <span class="phase-count" id="cnt-headers">—</span>
+      </div>
+      <div class="phase-item" id="phase-nmap">
+        <div class="phase-icon">3</div>
         <span class="phase-label">Port Scan</span>
         <span class="phase-count" id="cnt-nmap">—</span>
       </div>
       <div class="phase-item" id="phase-crawl">
-        <div class="phase-icon">2</div>
+        <div class="phase-icon">4</div>
         <span class="phase-label">Crawl</span>
         <span class="phase-count" id="cnt-crawl">—</span>
       </div>
       <div class="phase-item" id="phase-sqli">
-        <div class="phase-icon">3</div>
+        <div class="phase-icon">5</div>
         <span class="phase-label">SQL Injection</span>
         <span class="phase-count" id="cnt-sqli">—</span>
       </div>
       <div class="phase-item" id="phase-xss">
-        <div class="phase-icon">4</div>
+        <div class="phase-icon">6</div>
         <span class="phase-label">XSS</span>
         <span class="phase-count" id="cnt-xss">—</span>
       </div>
       <div class="phase-item" id="phase-lfi">
-        <div class="phase-icon">5</div>
+        <div class="phase-icon">7</div>
         <span class="phase-label">LFI / Path Traversal</span>
         <span class="phase-count" id="cnt-lfi">—</span>
       </div>
+      <div class="phase-item" id="phase-brute">
+        <div class="phase-icon">8</div>
+        <span class="phase-label">Brute Force</span>
+        <span class="phase-count" id="cnt-brute">—</span>
+      </div>
       <div class="phase-item" id="phase-files">
-        <div class="phase-icon">6</div>
+        <div class="phase-icon">9</div>
         <span class="phase-label">File Exposure</span>
         <span class="phase-count" id="cnt-files">—</span>
       </div>
       <div class="phase-item" id="phase-subd">
-        <div class="phase-icon">7</div>
+        <div class="phase-icon">10</div>
         <span class="phase-label">Subdomains</span>
         <span class="phase-count" id="cnt-subd">—</span>
       </div>
     </div>
+
+    <div class="sidebar-section-title" style="margin-top:12px">Crawled Pages</div>
+    <div class="live-list empty" id="live-pages">Waiting for first page…</div>
+
+    <div class="sidebar-section-title" style="margin-top:12px">Open Ports</div>
+    <div class="live-list empty" id="live-ports">Waiting for port scan…</div>
 
     <div class="sidebar-section-title" style="margin-top:12px">Live Findings</div>
     <div class="live-vulns" id="live-vulns">
@@ -469,13 +519,17 @@
   const reportBtn  = document.getElementById("view-report-btn");
   const noVulnsMsg = document.getElementById("no-vulns-msg");
   const liveVulns  = document.getElementById("live-vulns");
+  const livePages  = document.getElementById("live-pages");
+  const livePorts  = document.getElementById("live-ports");
 
   let logCount = 0;
   let activeFilter = "all";
   let scanStarted = Date.now();
+  const seenPages = new Set();
+  const seenPorts = new Set();
 
   const PHASE_PCT = {
-    nmap: 10, crawl: 20, sqli: 50, xss: 70, lfi: 80, files: 90, subd: 95
+    cms: 6, headers: 8, nmap: 10, crawl: 20, sqli: 50, xss: 70, lfi: 80, brute: 86, files: 92, subd: 95
   };
   let currentPct = 0;
 
@@ -578,7 +632,7 @@
         if (status === "vuln-found") cntEl.style.color = "#ff6060";
       }
       // mark as vuln-found if count > 0 and it's a vuln phase
-      if (count > 0 && ["sqli","xss","lfi"].includes(phase)) {
+      if (count > 0 && ["cms","headers","sqli","xss","lfi","brute","files","subd"].includes(phase)) {
         el.className = "phase-item vuln-found";
       }
     }
@@ -588,9 +642,83 @@
     }
   }
 
+  function setPhaseProgress(phase, data) {
+    const cntEl = document.getElementById(`cnt-${phase}`);
+    const el = document.getElementById(`phase-${phase}`);
+    if (!cntEl || !el) return;
+
+    const checked = data.checked || 0;
+    const total = data.total;
+    cntEl.textContent = total ? `${checked}/${total}` : checked;
+    if (!el.classList.contains("done") && !el.classList.contains("vuln-found")) {
+      el.className = "phase-item running";
+    }
+
+    const label = el.querySelector(".phase-label")?.textContent || phase;
+    if (data.param) {
+      setProgress(PHASE_PCT[phase] || currentPct, `${label}: testing ${data.param}…`);
+    } else if (data.stage) {
+      setProgress(PHASE_PCT[phase] || currentPct, `${label}: ${data.stage}…`);
+    }
+  }
+
+  function relativeUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.pathname || "/"}${parsed.search || ""}`;
+    } catch {
+      return url;
+    }
+  }
+
+  function addLivePage(url, count) {
+    if (seenPages.has(url)) return;
+    seenPages.add(url);
+    if (livePages.classList.contains("empty")) {
+      livePages.classList.remove("empty");
+      livePages.textContent = "";
+    }
+
+    const row = document.createElement("div");
+    row.className = "live-row";
+    row.title = url;
+    row.innerHTML = `<strong>${count}</strong><span>${escHtml(relativeUrl(url))}</span>`;
+    livePages.appendChild(row);
+    livePages.scrollTop = livePages.scrollHeight;
+    setPhase("crawl", "running", count);
+  }
+
+  function addLivePort(port) {
+    const key = `${port.protocol || "tcp"}/${port.port}`;
+    if (seenPorts.has(key)) return;
+    seenPorts.add(key);
+    if (livePorts.classList.contains("empty")) {
+      livePorts.classList.remove("empty");
+      livePorts.textContent = "";
+    }
+
+    const row = document.createElement("div");
+    row.className = "live-row port-row";
+    row.innerHTML = `
+      <strong>${escHtml(String(port.port))}</strong>
+      <span>${escHtml(port.protocol || "tcp")} ${escHtml(port.service || "unknown")} ${escHtml(port.status || "open")}</span>
+    `;
+    livePorts.appendChild(row);
+    livePorts.scrollTop = livePorts.scrollHeight;
+  }
+
   function addLiveVuln(category, vuln) {
     noVulnsMsg.style.display = "none";
-    const severityMap = {sqli: getSqliSev(vuln.type), xss: getXssSev(vuln.type), lfi: "critical"};
+    const severityMap = {
+      sqli: getSqliSev(vuln.type),
+      xss: getXssSev(vuln.type),
+      lfi: "critical",
+      bruteforce: "critical",
+      files: vuln.severity || "high",
+      subd: vuln.severity || "low",
+      headers: vuln.severity || "medium",
+      cms: vuln.severity || "medium"
+    };
     const sev = severityMap[category] || "medium";
 
     const id = `lv-${++logCount}`;
@@ -598,11 +726,11 @@
     item.className = `live-vuln-item ${sev}`;
     item.innerHTML = `
       <div class="live-vuln-label">
-        <span class="tag ${category}">${category.toUpperCase()}</span>
+        <span class="tag ${category}">${escHtml(category.toUpperCase())}</span>
         ${escHtml(vuln.type || category)}
         <button class="expand-btn" onclick="toggleDetail('${id}')">▶</button>
       </div>
-      <div class="live-vuln-url">${escHtml((vuln.url || vuln.url || '').replace(/https?:\/\/[^/]+/, ''))}</div>
+      <div class="live-vuln-url">${escHtml((vuln.url || vuln.login_url || vuln.subdomain || '').replace(/https?:\/\/[^/]+/, ''))}</div>
     `;
     liveVulns.appendChild(item);
 
@@ -654,6 +782,18 @@
       setPhase(ev.data.phase, ev.data.status, ev.data.count);
     }
 
+    if (ev.type === "progress") {
+      setPhaseProgress(ev.data.phase, ev.data);
+    }
+
+    if (ev.type === "crawl_page") {
+      addLivePage(ev.data.url, ev.data.count);
+    }
+
+    if (ev.type === "port") {
+      addLivePort(ev.data);
+    }
+
     if (ev.type === "vuln") {
       addLiveVuln(ev.data.category, ev.data.data);
     }
@@ -661,9 +801,15 @@
     if (ev.type === "done") {
       es.close();
       pulse.classList.add("done");
-      setProgress(100, "Scan complete!");
-      addLog("✓ Scan finished — building report…", "success");
+      const status = ev.data.status || "completed";
+      const finishedOk = status === "completed";
+      setProgress(100, finishedOk ? "Scan complete!" : `Scan ${status}`);
+      addLog(
+        finishedOk ? "Scan finished — building report…" : `Scan ended with status: ${status}`,
+        finishedOk ? "success" : "warn"
+      );
       reportBtn.href = `/report/${ev.data.scan_id}`;
+      reportBtn.textContent = finishedOk ? "View Full Report →" : "View Partial Report →";
       reportBtn.classList.add("visible");
     }
 

@@ -51,12 +51,13 @@ def _check_sensitive_path(base, path):
     }
 
 
-def scan_file_exposure(base_url, should_stop=None):
+def scan_file_exposure(base_url, should_stop=None, on_progress=None, on_finding=None):
     print(f"\n[FILE] Scanning: {base_url}")
 
     findings = []
     parsed = urlparse(base_url)
     base = f"{parsed.scheme}://{parsed.netloc}"
+    checked = 0
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
@@ -66,11 +67,16 @@ def scan_file_exposure(base_url, should_stop=None):
         for future in as_completed(futures):
             if should_stop_scan(should_stop):
                 break
+            checked += 1
+            if on_progress:
+                on_progress({"checked": checked, "total": len(SENSITIVE_PATHS), "path": futures[future]})
             result = future.result()
             if not result:
                 continue
             print(f"[FOUND] {result['url']} -> {result['status']}")
             findings.append(result)
+            if on_finding:
+                on_finding(result)
 
     print(f"[FILE] Found {len(findings)} result(s)")
     return findings

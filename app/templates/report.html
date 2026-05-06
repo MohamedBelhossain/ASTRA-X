@@ -40,6 +40,55 @@
       .detail-val.status-403, .detail-val.status-401 { color: #ffd600; }
       .detail-val.status-500 { color: #ff5050; }
       .detail-sep { border: none; border-top: 1px solid #1a1a1a; margin: 8px 0; }
+      .status-note {
+        margin: 14px 0 0;
+        border: 1px solid #2b2415;
+        background: rgba(255, 193, 7, .07);
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: #d9bd61;
+        font-size: .86rem;
+      }
+      .finding-summary {
+        margin: 8px 0 10px;
+        color: #cfcfcf;
+        line-height: 1.55;
+      }
+      .evidence-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .evidence-box {
+        border: 1px solid #202020;
+        background: #101010;
+        border-radius: 7px;
+        padding: 10px 12px;
+        min-width: 0;
+      }
+      .evidence-box.full { grid-column: 1 / -1; }
+      .evidence-title {
+        display: block;
+        color: #666;
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: .07em;
+        margin-bottom: 5px;
+      }
+      .evidence-text {
+        color: #aaa;
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
+      .evidence-code {
+        color: #ffb15c;
+        font-family: 'Courier New', monospace;
+        word-break: break-all;
+      }
+      @media (max-width: 760px) {
+        .evidence-grid { grid-template-columns: 1fr; }
+      }
 
       .detail-toggle {
         background: none;
@@ -83,6 +132,10 @@
       .sev-info     { color: #888; }
 
       .vuln-card { position: relative; }
+      .report-summary-status .summary-num {
+        font-size: clamp(16px, 1.8vw, 21px);
+        letter-spacing: .03em;
+      }
     </style>
     {% endif %}
   </head>
@@ -116,9 +169,13 @@
         </div>
 
         <div class="summary-row">
-          <div class="summary-badge">
+          <div class="summary-badge report-summary-status">
             <span class="summary-num">{{ status | upper }}</span>
             <span class="summary-label">Scan Status</span>
+          </div>
+          <div class="summary-badge">
+            <span class="summary-num">{{ scan_mode | upper }}</span>
+            <span class="summary-label">Scan Mode</span>
           </div>
           <div class="summary-badge">
             <span class="summary-num">{{ pages_scanned }}</span>
@@ -127,6 +184,14 @@
           <div class="summary-badge">
             <span class="summary-num">{{ open_ports | length }}</span>
             <span class="summary-label">Open Ports</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if cms_result and cms_result.cves else 'badge-safe' }}">
+            <span class="summary-num">{{ cms_result.cves | length if cms_result else 0 }}</span>
+            <span class="summary-label">CMS CVEs</span>
+          </div>
+          <div class="summary-badge {{ 'badge-danger' if header_result and header_result.findings else 'badge-safe' }}">
+            <span class="summary-num">{{ header_result.findings | length if header_result else 0 }}</span>
+            <span class="summary-label">Header Issues</span>
           </div>
           <div class="summary-badge {{ 'badge-danger' if vulnerabilities else 'badge-safe' }}">
             <span class="summary-num">{{ vulnerabilities | length }}</span>
@@ -153,6 +218,95 @@
             <span class="summary-label">Subdomains</span>
           </div>
         </div>
+        {% if status != "completed" %}
+          <div class="status-note">
+            This is a partial report. The scan status is {{ status | upper }}, so only phases that finished before the scan stopped are shown.
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- ── Security Headers ─────────────────────────────── -->
+      <div class="section">
+        <h3>Security Headers</h3>
+        {% set header_findings = header_result.findings if header_result else [] %}
+        {% if header_result and header_result.error %}
+          <div class="vuln-card vuln-low">
+            <div class="vuln-header">
+              <span class="vuln-type">Header Check Failed</span>
+              <span class="severity-badge sev-low">LOW</span>
+            </div>
+            <div class="vuln-body">
+              <p><span class="vuln-key">Error</span><span class="vuln-val">{{ header_result.error }}</span></p>
+            </div>
+          </div>
+        {% elif header_findings %}
+          {% for finding in header_findings %}
+            {% set sev = finding.severity if finding.severity in ["critical", "high", "medium", "low"] else "info" %}
+            <div class="vuln-card vuln-{{ sev }}">
+              <div class="vuln-header">
+                <span class="vuln-type">{{ finding.type }}</span>
+                <span class="severity-badge sev-{{ sev }}">{{ sev | upper }}</span>
+              </div>
+              <div class="vuln-body">
+                <p><span class="vuln-key">URL</span><span class="vuln-val">{{ finding.url }}</span></p>
+                <p><span class="vuln-key">Header</span><span class="vuln-val">{{ finding.header }}</span></p>
+                <p><span class="vuln-key">Evidence</span><span class="vuln-val">{{ finding.evidence }}</span></p>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No missing security headers or risky cookie attributes were observed on the landing response.</p></div>
+        {% endif %}
+      </div>
+
+      <!-- ── CMS / CVE Intelligence ─────────────────────── -->
+      <div class="section">
+        <h3>CMS / Version Intelligence</h3>
+        {% set cms = cms_result.detected if cms_result else none %}
+        {% set cves = cms_result.cves if cms_result else [] %}
+        {% if cms and cms.detected %}
+          <div class="vuln-card {{ 'vuln-medium' if cves else 'vuln-info' }}">
+            <div class="vuln-header">
+              <span class="vuln-type">{{ cms.name }}{% if cms.version %} {{ cms.version }}{% endif %}</span>
+              <span class="severity-badge {{ 'sev-medium' if cves else 'sev-info' }}">{{ cms.confidence | upper }}</span>
+            </div>
+            <div class="vuln-body">
+              <p><span class="vuln-key">Detected CMS</span><span class="vuln-val">{{ cms.name }}</span></p>
+              <p><span class="vuln-key">Version</span><span class="vuln-val">{{ cms.version or "Not exposed" }}</span></p>
+              {% if cms.generator %}
+              <p><span class="vuln-key">Generator</span><span class="vuln-val">{{ cms.generator }}</span></p>
+              {% endif %}
+              {% if cms.evidence %}
+              <p><span class="vuln-key">Signals</span><span class="vuln-val">{{ cms.evidence | join(", ") }}</span></p>
+              {% endif %}
+              <p><span class="vuln-key">CVE Lookup</span><span class="vuln-val">{{ cms_result.cve_source }} keyword search{% if cms.version %} for {{ cms.name }} {{ cms.version }}{% endif %}</span></p>
+            </div>
+          </div>
+
+          {% if cves %}
+            {% for cve in cves %}
+              {% set sev = cve.severity if cve.severity in ["critical", "high", "medium", "low"] else "info" %}
+              <div class="vuln-card vuln-{{ sev }}">
+                <div class="vuln-header">
+                  <span class="vuln-type">{{ cve.id }}</span>
+                  <span class="severity-badge sev-{{ sev }}">{{ cve.severity | upper }}{% if cve.score %} {{ cve.score }}{% endif %}</span>
+                </div>
+                <div class="vuln-body">
+                  <p><span class="vuln-key">Source</span><span class="vuln-val">{{ cve.source }}</span></p>
+                  <p><span class="vuln-key">Published</span><span class="vuln-val">{{ cve.published or "—" }}</span></p>
+                  <p><span class="vuln-key">Match Basis</span><span class="vuln-val">{{ cve.match_basis }}</span></p>
+                  <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ cve.confidence | upper }}</span></p>
+                  <p><span class="vuln-key">Summary</span><span class="vuln-val">{{ cve.description }}</span></p>
+                  <p><span class="vuln-key">Reference</span><span class="vuln-val"><a href="{{ cve.url }}" target="_blank" style="color:var(--accent)">{{ cve.url }}</a></span></p>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No candidate CVE records were returned for this CMS fingerprint.</p></div>
+          {% endif %}
+        {% else %}
+          <div class="no-vulns"><span class="no-vulns-icon">✓</span><p>No known CMS fingerprint was detected.</p></div>
+        {% endif %}
       </div>
 
       <!-- ── Open Ports ──────────────────────────────────── -->
@@ -240,7 +394,7 @@
                   <p><span class="vuln-key">Matched Error</span><span class="vuln-val">{{ vuln.matched_error }}</span></p>
                 {% endif %}
                 {% if vuln.true_false_diff %}
-                  <p><span class="vuln-key">True/False Diff</span><span class="vuln-val">{{ vuln.true_false_diff }} bytes</span></p>
+                  <p><span class="vuln-key">Response Change</span><span class="vuln-val">{{ vuln.true_false_diff }} bytes</span></p>
                 {% endif %}
                 {% if vuln.delay_seconds %}
                   <p><span class="vuln-key">Delay</span><span class="vuln-val">{{ vuln.delay_seconds }}s</span></p>
@@ -249,56 +403,53 @@
                   <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <div class="detail-row">
-                  <span class="detail-key">METHOD</span>
-                  <span class="detail-val method">{{ "POST" if vuln.type in ["error-based", "boolean-based", "time-based", "response-diff"] else "GET" }}</span>
+                <p class="finding-summary">
+                  {% if vuln.type == "error-based" %}
+                    The payload triggered a database error message in the HTTP response. This usually means user input is reaching a SQL query without safe parameter binding.
+                  {% elif vuln.type == "boolean-based" %}
+                    Two logically different SQL payloads produced noticeably different responses. That behavior is consistent with injectable SQL conditions.
+                  {% elif vuln.type == "time-based" %}
+                    The response became slower after a delay payload. That suggests the database may be executing attacker-controlled SQL.
+                  {% elif vuln.type == "response-diff" %}
+                    A quote-style probe changed the response size or status enough to indicate that the parameter may be handled unsafely by backend query logic.
+                  {% else %}
+                    The scanner observed behavior that may indicate SQL injection.
+                  {% endif %}
+                </p>
+                <div class="evidence-grid">
+                  <div class="evidence-box">
+                    <span class="evidence-title">Request Tested</span>
+                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or "GET/POST" }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Input Point</span>
+                    <div class="evidence-text">Parameter <span class="detail-val param">{{ vuln.parameter }}</span></div>
+                  </div>
+                  <div class="evidence-box full">
+                    <span class="evidence-title">Payload Used</span>
+                    <div class="evidence-code">{{ vuln.payload }}</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Observed Behavior</span>
+                    <div class="evidence-text">
+                      {% if vuln.matched_error %}Database error matched: {{ vuln.matched_error }}
+                      {% elif vuln.true_false_diff %}True and false SQL conditions differed by {{ vuln.true_false_diff }} bytes.
+                      {% elif vuln.response_diff %}Probe response changed by {{ vuln.response_diff }} bytes.
+                      {% elif vuln.delay_seconds %}Response delayed to {{ vuln.delay_seconds }}s from {{ vuln.baseline_seconds or "baseline" }}.
+                      {% else %}{{ vuln.evidence or "Suspicious response behavior was observed." }}
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Recommended Check</span>
+                    <div class="evidence-text">Retest this parameter manually, then verify the backend uses parameterized queries and does not concatenate user input into SQL.</div>
+                  </div>
                 </div>
-                <hr class="detail-sep">
-                <div class="detail-row">
-                  <span class="detail-key">URL</span>
-                  <span class="detail-val url">{{ vuln.url }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-key">PARAMETER</span>
-                  <span class="detail-val param">{{ vuln.parameter }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-key">PAYLOAD</span>
-                  <span class="detail-val payload">{{ vuln.payload }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-key">TYPE</span>
-                  <span class="detail-val">{{ vuln.type | replace("-", " ") | title }}</span>
-                </div>
-                {% if vuln.matched_error %}
-                <div class="detail-row">
-                  <span class="detail-key">EVIDENCE</span>
-                  <span class="detail-val payload">{{ vuln.matched_error }}</span>
-                </div>
-                {% endif %}
-                {% if vuln.true_false_diff %}
-                <div class="detail-row">
-                  <span class="detail-key">DIFF</span>
-                  <span class="detail-val">{{ vuln.true_false_diff }} bytes between true/false responses</span>
-                </div>
-                {% endif %}
-                {% if vuln.delay_seconds %}
-                <div class="detail-row">
-                  <span class="detail-key">DELAY</span>
-                  <span class="detail-val">{{ vuln.delay_seconds }}s response delay detected</span>
-                </div>
-                {% endif %}
-                {% if vuln.evidence_excerpt %}
-                <div class="detail-row">
-                  <span class="detail-key">SNIPPET</span>
-                  <span class="detail-val">{{ vuln.evidence_excerpt }}</span>
-                </div>
-                {% endif %}
               </div>
               {% endif %}
             </div>
@@ -330,26 +481,42 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">{{ "GET" if vuln.type == "dom-based" else "POST / GET" }}</span></div>
-                <hr class="detail-sep">
-                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ vuln.url }}</span></div>
-                <div class="detail-row"><span class="detail-key">PARAMETER</span><span class="detail-val param">{{ vuln.parameter }}</span></div>
-                <div class="detail-row"><span class="detail-key">PAYLOAD</span><span class="detail-val payload">{{ vuln.payload }}</span></div>
-                <div class="detail-row"><span class="detail-key">XSS TYPE</span><span class="detail-val">{{ vuln.type | replace("-", " ") | title }}</span></div>
-                <div class="detail-row"><span class="detail-key">IMPACT</span><span class="detail-val">
-                  {% if vuln.type == "stored" %}Payload persisted and re-rendered to users.
-                  {% elif vuln.type == "reflected" %}Payload reflected in the immediate server response.
-                  {% else %}Client-side DOM handling appears to process attacker-controlled input.
+                <p class="finding-summary">
+                  {% if vuln.type == "stored" %}
+                    The payload appeared again after a follow-up request, which suggests attacker-controlled script can be saved and later shown to users.
+                  {% elif vuln.type == "reflected" %}
+                    The payload was reflected in the immediate response, which can let an attacker craft a malicious link if the value is rendered as executable HTML or JavaScript.
+                  {% else %}
+                    The page contains client-side DOM sinks that may process attacker-controlled browser input.
                   {% endif %}
-                </span></div>
-                {% if vuln.evidence_excerpt %}
-                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ vuln.evidence_excerpt }}</span></div>
-                {% endif %}
+                </p>
+                <div class="evidence-grid">
+                  <div class="evidence-box">
+                    <span class="evidence-title">Request Tested</span>
+                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or ("GET" if vuln.type == "dom-based" else "GET/POST") }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Input Point</span>
+                    <div class="evidence-text">{{ vuln.parameter }}</div>
+                  </div>
+                  <div class="evidence-box full">
+                    <span class="evidence-title">Payload Used</span>
+                    <div class="evidence-code">{{ vuln.payload }}</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Observed Behavior</span>
+                    <div class="evidence-text">{{ vuln.evidence or "Payload or DOM sink was observed in the response." }}</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Recommended Check</span>
+                    <div class="evidence-text">Confirm the payload executes in a browser context, then encode output by context and sanitize any allowed HTML.</div>
+                  </div>
+                </div>
               </div>
               {% endif %}
             </div>
@@ -381,23 +548,36 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">GET</span></div>
-                <hr class="detail-sep">
-                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ vuln.url }}</span></div>
-                <div class="detail-row"><span class="detail-key">PARAMETER</span><span class="detail-val param">{{ vuln.param }}</span></div>
-                <div class="detail-row"><span class="detail-key">PAYLOAD</span><span class="detail-val payload">{{ vuln.payload }}</span></div>
-                {% if vuln.evidence %}
-                <div class="detail-row"><span class="detail-key">EVIDENCE</span><span class="detail-val">{{ vuln.evidence }}</span></div>
-                {% endif %}
-                {% if vuln.evidence_excerpt %}
-                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ vuln.evidence_excerpt }}</span></div>
-                {% endif %}
-                <div class="detail-row"><span class="detail-key">IMPACT</span><span class="detail-val">The application appears to read local server files through attacker-controlled input.</span></div>
+                <p class="finding-summary">
+                  The scanner sent a traversal payload through a query parameter and saw response content that looks like a local server file. This can expose credentials, configuration, source code, or operating system files.
+                </p>
+                <div class="evidence-grid">
+                  <div class="evidence-box">
+                    <span class="evidence-title">Request Tested</span>
+                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or "GET" }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Input Point</span>
+                    <div class="evidence-text">Parameter <span class="detail-val param">{{ vuln.param }}</span></div>
+                  </div>
+                  <div class="evidence-box full">
+                    <span class="evidence-title">Payload Used</span>
+                    <div class="evidence-code">{{ vuln.payload }}</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Observed Behavior</span>
+                    <div class="evidence-text">{{ vuln.evidence or "Sensitive local-file marker appeared in the response." }}</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Recommended Check</span>
+                    <div class="evidence-text">Restrict file reads to an allowlisted directory, normalize paths before access, and reject traversal sequences before opening files.</div>
+                  </div>
+                </div>
               </div>
               {% endif %}
             </div>
@@ -494,23 +674,32 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ f.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ Request details</button>
+                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <div class="detail-row"><span class="detail-key">METHOD</span><span class="detail-val method">GET</span></div>
-                <hr class="detail-sep">
-                <div class="detail-row"><span class="detail-key">URL</span><span class="detail-val url">{{ f.url }}</span></div>
-                <div class="detail-row">
-                  <span class="detail-key">STATUS</span>
-                  <span class="detail-val status-{{ f.status }}">{{ f.status }}</span>
+                <p class="finding-summary">
+                  A path commonly associated with sensitive files returned a non-error response. Review whether this file should be publicly reachable.
+                </p>
+                <div class="evidence-grid">
+                  <div class="evidence-box">
+                    <span class="evidence-title">Request Tested</span>
+                    <div class="evidence-text"><span class="detail-val method">GET</span> <span class="detail-val url">{{ f.url }}</span></div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">HTTP Result</span>
+                    <div class="evidence-text">Status <span class="detail-val status-{{ f.status }}">{{ f.status }}</span>, {{ f.size }} bytes</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Risk</span>
+                    <div class="evidence-text">The file may reveal configuration, deployment metadata, credentials, backups, or source information.</div>
+                  </div>
+                  <div class="evidence-box">
+                    <span class="evidence-title">Recommended Check</span>
+                    <div class="evidence-text">Remove the file from the web root or block it at the web server and deployment pipeline.</div>
+                  </div>
                 </div>
-                <div class="detail-row"><span class="detail-key">BODY SIZE</span><span class="detail-val">{{ f.size }} bytes</span></div>
-                {% if f.evidence_excerpt %}
-                <div class="detail-row"><span class="detail-key">SNIPPET</span><span class="detail-val">{{ f.evidence_excerpt }}</span></div>
-                {% endif %}
-                <div class="detail-row"><span class="detail-key">RISK</span><span class="detail-val">A potentially sensitive path is reachable and returned a non-error response.</span></div>
               </div>
               {% endif %}
             </div>
@@ -565,7 +754,7 @@
         if (btn && btn.classList.contains("detail-toggle")) {
           btn.textContent = el.classList.contains("open")
             ? "▼ Hide details"
-            : "▶ Request details";
+            : "▶ View evidence";
           if (id.startsWith("pages")) {
             btn.textContent = el.classList.contains("open")
               ? "▼ Hide URLs"

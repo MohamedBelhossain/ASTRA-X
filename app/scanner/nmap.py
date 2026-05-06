@@ -12,7 +12,7 @@ def run_nmap(target_url):
         ip = socket.gethostbyname(hostname)
 
         nm = nmap.PortScanner()
-        nm.scan(ip, COMMON_PORTS)
+        nm.scan(ip, COMMON_PORTS, arguments="-T4 --host-timeout 20s")
 
         open_ports = []
         for host in nm.all_hosts():

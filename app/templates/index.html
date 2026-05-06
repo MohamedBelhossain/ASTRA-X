@@ -22,8 +22,8 @@
     .overlay-inner {
       display: grid;
       grid-template-columns: 260px 1fr;
-      grid-template-rows: auto 1fr auto;
-      width: 860px;
+      grid-template-rows: auto auto 1fr auto;
+      width: 980px;
       max-width: 98vw;
       margin: 32px 0;
       background: #111;
@@ -68,6 +68,35 @@
       border: 1px solid rgba(0,255,120,.18);
       color: #00cc66;
       padding: 3px 12px; border-radius: 20px;
+    }
+
+    .ov-metrics {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 1px;
+      background: #1e1e1e;
+      border-bottom: 1px solid #1e1e1e;
+    }
+    .metric-card {
+      background: #101010;
+      padding: 10px 14px;
+      min-width: 0;
+    }
+    .metric-value {
+      display: block;
+      color: #d7d7d7;
+      font-family: monospace;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .metric-label {
+      display: block;
+      color: #444;
+      font-size: .62rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-top: 2px;
     }
 
     /* ── Sidebar: phases ───────────────────────────────────── */
@@ -134,7 +163,11 @@
     .finding-item.sqli  { border-left-color: #ff3c3c; }
     .finding-item.xss   { border-left-color: #ff8c00; }
     .finding-item.lfi   { border-left-color: #b040ff; }
+    .finding-item.cms   { border-left-color: #00bcd4; }
+    .finding-item.headers { border-left-color: #ffd600; }
     .finding-item.bruteforce { border-left-color: #ff5c8a; }
+    .finding-item.files { border-left-color: #63d471; }
+    .finding-item.subd { border-left-color: #6ab4ff; }
     .finding-name {
       font-size: .73rem; font-weight: 600; color: #ccc;
       display: flex; align-items: center; gap: 5px;
@@ -150,7 +183,11 @@
     .tag.sqli { background: rgba(255,60,60,.15);  color: #ff6060; }
     .tag.xss  { background: rgba(255,140,0,.15);  color: #ffa040; }
     .tag.lfi  { background: rgba(180,0,255,.15);  color: #c060ff; }
+    .tag.cms  { background: rgba(0,188,212,.14);  color: #41d8e8; }
+    .tag.headers { background: rgba(255,214,0,.12); color: #d8bc35; }
     .tag.bruteforce { background: rgba(255,92,138,.14); color: #ff7aa5; }
+    .tag.files { background: rgba(99,212,113,.14); color: #83e192; }
+    .tag.subd { background: rgba(106,180,255,.14); color: #8bc6ff; }
     .no-findings { padding: 12px 16px; font-size: .73rem; color: #333; }
 
     /* ── Right: terminal + detail panel ───────────────────── */
@@ -227,6 +264,8 @@
     .sev-critical { color: #ff4040; border: 1px solid #ff404044; }
     .sev-high     { color: #ff8c00; border: 1px solid #ff8c0044; }
     .sev-medium   { color: #ccaa00; border: 1px solid #ccaa0044; }
+    .sev-low      { color: #89c65a; border: 1px solid #89c65a44; }
+    .sev-info     { color: #888; border: 1px solid #555; }
     .req-table {
       border: 1px solid #1a1a1a; border-radius: 6px; overflow: hidden;
       font-family: monospace; font-size: .7rem;
@@ -268,6 +307,11 @@
       border: none; padding: 8px 20px; border-radius: 7px;
       cursor: pointer; font-size: .82rem; text-decoration: none;
       transition: opacity .15s;
+    }
+    .go-report.secondary {
+      background: transparent;
+      color: #999;
+      border: 1px solid #2a2a2a;
     }
     .go-report:hover { opacity: .85; }
     .go-report.show { display: inline-block; }
@@ -367,8 +411,8 @@
       <span class="window-title">WebVulnScan</span>
     </div>
     <div class="page-panel">
-      <div class="hero-strip">
-        <div class="hero-copy">
+      <div class="hero-strip dashboard-hero">
+        <div class="hero-copy scan-entry-panel">
           <div class="brand">
             <div class="logo"></div>
             <div>
@@ -376,34 +420,6 @@
               <div class="subtitle">Ports · SQLi · XSS · LFI · Brute Force · Files · Subdomains</div>
             </div>
           </div>
-        </div>
-        <div class="hero-side">
-          <div class="scan-actions">
-            <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
-            <form action="{{ url_for('auth.logout') }}" method="POST" style="margin:0;">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="back-link" style="background:none; border:none; padding:0; cursor:pointer;">Logout</button>
-            </form>
-          </div>
-
-          <div class="field-row" style="margin-bottom:14px;">
-            <label>Scan Quota</label>
-            <div class="mode-card" style="cursor:default;">
-              <div class="mode-title">
-                <span>{{ scan_quota.remaining }} / {{ scan_quota.limit }} scans left</span>
-                <span class="mode-badge">{{ scan_quota.active_scans }}/{{ scan_quota.max_active_scans }} active</span>
-              </div>
-              <div class="mode-copy">
-                Per-user limit: {{ scan_quota.limit }} scan(s) every {{ scan_quota.window_seconds // 60 }} minute(s).
-                {% if scan_quota.used %}
-                  Window resets in about {{ scan_quota.reset_in }}s.
-                {% else %}
-                  Your quota window is currently clear.
-                {% endif %}
-              </div>
-            </div>
-          </div>
-
           <form id="scan-form" class="form-stack">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-row">
@@ -439,10 +455,36 @@
 
           <div class="footer">Educational use only</div>
         </div>
+        <div class="hero-side account-panel">
+          <div class="scan-actions">
+            <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
+            <form action="{{ url_for('auth.logout') }}" method="POST" style="margin:0;">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="back-link" style="background:none; border:none; padding:0; cursor:pointer;">Logout</button>
+            </form>
+          </div>
+
+          <div class="field-row" style="margin-bottom:14px;">
+            <label>Scan Quota</label>
+            <div class="mode-card" style="cursor:default;">
+              <div class="mode-title">
+                <span>{{ scan_quota.remaining }} / {{ scan_quota.limit }} scans left</span>
+                <span class="mode-badge">{{ scan_quota.active_scans }}/{{ scan_quota.max_active_scans }} active</span>
+              </div>
+              <div class="mode-copy">
+                Per-user limit: {{ scan_quota.limit }} scan(s) every {{ scan_quota.window_seconds // 60 }} minute(s).
+                {% if scan_quota.used %}
+                  Window resets in about {{ scan_quota.reset_in }}s.
+                {% else %}
+                  Your quota window is currently clear.
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
-</div>
 
 {% if scan_history %}
 <section class="shell-card">
@@ -479,6 +521,7 @@
   </div>
 </section>
 {% endif %}
+</div>
 
 <!-- ── Live scan overlay ────────────────────────────────────── -->
 <div id="progress-overlay" class="progress-overlay hidden">
@@ -495,47 +538,80 @@
       <span class="ov-target" id="ov-target"></span>
     </header>
 
+    <section class="ov-metrics" aria-label="Scan metrics">
+      <div class="metric-card">
+        <span class="metric-value" id="metric-elapsed">0.0s</span>
+        <span class="metric-label">Elapsed</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value" id="metric-phases">0/10</span>
+        <span class="metric-label">Phases Done</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value" id="metric-pages">0</span>
+        <span class="metric-label">Pages</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value" id="metric-ports">0</span>
+        <span class="metric-label">Open Ports</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value" id="metric-findings">0</span>
+        <span class="metric-label">Findings</span>
+      </div>
+    </section>
+
     <!-- Sidebar -->
     <aside class="ov-sidebar">
       <div class="ov-sec">Phases</div>
       <div class="phase-list">
-        <div class="phase-item" id="ph-nmap">
+        <div class="phase-item" id="ph-cms">
           <div class="phase-icon">1</div>
+          <span class="phase-label">CMS / CVE</span>
+          <span class="phase-count" id="pc-cms">—</span>
+        </div>
+        <div class="phase-item" id="ph-headers">
+          <div class="phase-icon">2</div>
+          <span class="phase-label">Headers</span>
+          <span class="phase-count" id="pc-headers">—</span>
+        </div>
+        <div class="phase-item" id="ph-nmap">
+          <div class="phase-icon">3</div>
           <span class="phase-label">Port Scan</span>
           <span class="phase-count" id="pc-nmap">—</span>
         </div>
         <div class="phase-item" id="ph-crawl">
-          <div class="phase-icon">2</div>
+          <div class="phase-icon">4</div>
           <span class="phase-label">Crawl</span>
           <span class="phase-count" id="pc-crawl">—</span>
         </div>
         <div class="phase-item" id="ph-sqli">
-          <div class="phase-icon">3</div>
+          <div class="phase-icon">5</div>
           <span class="phase-label">SQL Injection</span>
           <span class="phase-count" id="pc-sqli">—</span>
         </div>
         <div class="phase-item" id="ph-xss">
-          <div class="phase-icon">4</div>
+          <div class="phase-icon">6</div>
           <span class="phase-label">XSS</span>
           <span class="phase-count" id="pc-xss">—</span>
         </div>
         <div class="phase-item" id="ph-lfi">
-          <div class="phase-icon">5</div>
+          <div class="phase-icon">7</div>
           <span class="phase-label">LFI / Path Traversal</span>
           <span class="phase-count" id="pc-lfi">—</span>
         </div>
         <div class="phase-item" id="ph-brute">
-          <div class="phase-icon">6</div>
+          <div class="phase-icon">8</div>
           <span class="phase-label">Brute Force</span>
           <span class="phase-count" id="pc-brute">—</span>
         </div>
         <div class="phase-item" id="ph-files">
-          <div class="phase-icon">7</div>
+          <div class="phase-icon">9</div>
           <span class="phase-label">File Exposure</span>
           <span class="phase-count" id="pc-files">—</span>
         </div>
         <div class="phase-item" id="ph-subd">
-          <div class="phase-icon">8</div>
+          <div class="phase-icon">10</div>
           <span class="phase-label">Subdomains</span>
           <span class="phase-count" id="pc-subd">—</span>
         </div>
@@ -569,6 +645,7 @@
       </div>
       <button class="go-report show" id="cancel-scan" type="button" style="display:inline-block; background:#222; color:#ddd;">Cancel Scan</button>
       <a class="go-report" id="go-report" href="#">View Report →</a>
+      <a class="go-report secondary" id="back-dashboard" href="/dashboard">Back to Dashboard</a>
     </footer>
 
   </div>
@@ -588,16 +665,29 @@
   const ovStatus  = document.getElementById("ov-status");
   const progFill  = document.getElementById("prog-fill");
   const goReport  = document.getElementById("go-report");
+  const backDashboard = document.getElementById("back-dashboard");
   const findList  = document.getElementById("findings-list");
   let noFinds   = document.getElementById("no-findings");
   const detPanel  = document.getElementById("detail-panel");
   const cancelBtn = document.getElementById("cancel-scan");
   const csrfToken = form.querySelector('input[name="_csrf_token"]').value;
+  const metrics = {
+    elapsed: document.getElementById("metric-elapsed"),
+    phases: document.getElementById("metric-phases"),
+    pages: document.getElementById("metric-pages"),
+    ports: document.getElementById("metric-ports"),
+    findings: document.getElementById("metric-findings"),
+  };
 
-  const PHASE_PCT = { nmap:10, crawl:20, sqli:45, xss:60, lfi:72, brute:82, files:90, subd:96 };
+  const PHASES = ["cms","headers","nmap","crawl","sqli","xss","lfi","brute","files","subd"];
+  const PHASE_PCT = { cms:6, headers:12, nmap:18, crawl:28, sqli:48, xss:62, lfi:74, brute:84, files:92, subd:97 };
+  const VULN_PHASES = ["cms", "headers", "sqli", "xss", "lfi", "brute", "files", "subd"];
   let scanStart = 0;
   let activeItem = null;
   let activeScanId = null;
+  let phaseDone = new Set();
+  let findingCount = 0;
+  let elapsedTimer = null;
 
   function resetOverlayState() {
     terminal.innerHTML = "";
@@ -607,10 +697,20 @@
     detPanel.innerHTML = '<div class="detail-empty-msg">← select a finding to inspect the request</div>';
     goReport.classList.remove("show");
     goReport.href = "#";
+    goReport.textContent = "View Report →";
+    progFill.style.width = "0%";
+    backDashboard.classList.remove("show");
     cancelBtn.style.display = "inline-block";
     noFinds.style.display = "block";
     activeItem = null;
-    ["nmap","crawl","sqli","xss","lfi","brute","files","subd"].forEach((name) => {
+    phaseDone = new Set();
+    findingCount = 0;
+    metrics.elapsed.textContent = "0.0s";
+    metrics.phases.textContent = `0/${PHASES.length}`;
+    metrics.pages.textContent = "0";
+    metrics.ports.textContent = "0";
+    metrics.findings.textContent = "0";
+    PHASES.forEach((name) => {
       const item = document.getElementById(`ph-${name}`);
       const count = document.getElementById(`pc-${name}`);
       if (item) item.className = "phase-item";
@@ -663,12 +763,49 @@
     } else if (status === "skipped") {
       el.classList.add("skipped");
     } else if (status === "done") {
-      el.classList.add(count > 0 && ["sqli","xss","lfi","bruteforce","brute"].includes(name) ? "vuln-found" : "done");
+      el.classList.add(count > 0 && VULN_PHASES.includes(name) ? "vuln-found" : "done");
     }
 
     if (count !== undefined && cnt) {
       cnt.textContent = status === "skipped" ? "skip" : count;
     }
+    if (status === "done" || status === "skipped") {
+      phaseDone.add(name);
+      metrics.phases.textContent = `${phaseDone.size}/${PHASES.length}`;
+    }
+    if (name === "crawl" && count !== undefined) metrics.pages.textContent = count;
+    if (name === "nmap" && count !== undefined) metrics.ports.textContent = count;
+  }
+
+  function setPhaseProgress(name, data) {
+    const el = document.getElementById(`ph-${name}`);
+    const cnt = document.getElementById(`pc-${name}`);
+    if (!el || !cnt) return;
+
+    if (!el.classList.contains("done") && !el.classList.contains("vuln-found")) {
+      el.className = "phase-item running";
+    }
+
+    const checked = Number(data.checked || 0);
+    const total = data.total ? Number(data.total) : null;
+    cnt.textContent = total ? `${checked}/${total}` : checked;
+
+    const label = el.querySelector(".phase-label")?.textContent || name;
+    const detail = data.param || data.path || data.subdomain || data.stage || data.url || "";
+    setProgress(PHASE_PCT[name] || curPct, detail ? `${label}: ${detail}` : `Running ${label}...`);
+  }
+
+  function updateLivePage(data) {
+    if (data?.count !== undefined) {
+      metrics.pages.textContent = data.count;
+      setPhase("crawl", "running", data.count);
+    }
+  }
+
+  function updateLivePort(data) {
+    if (!data) return;
+    const current = Number(metrics.ports.textContent || 0);
+    metrics.ports.textContent = current + 1;
   }
 
   // ── Progress bar ───────────────────────────────────────────
@@ -681,14 +818,16 @@
   // ── Add finding to sidebar ─────────────────────────────────
   function addFinding(category, vuln) {
     noFinds.style.display = "none";
-    const sev = getSeverity(category, vuln.type);
+    findingCount += 1;
+    metrics.findings.textContent = findingCount;
+    const sev = getSeverity(category, vuln.type, vuln.severity);
 
     const item = document.createElement("div");
     item.className = `finding-item ${category}`;
     item.innerHTML = `
       <div class="finding-name">
         <span class="tag ${category}">${category.toUpperCase()}</span>
-        ${esc(vuln.type || category)}
+        ${esc(vuln.id || vuln.type || category)}
       </div>
       <div class="finding-url">${esc((vuln.url || "").replace(/https?:\/\/[^/]+/, ""))}</div>
     `;
@@ -696,9 +835,9 @@
     const reqData = {
       method: vuln.method || "GET",
       url: vuln.login_url || vuln.url,
-      param: vuln.parameter || vuln.param || (category === "bruteforce" ? "credentials" : undefined),
-      payload: vuln.payload || (category === "bruteforce" ? `${vuln.username} / ${vuln.password}` : undefined),
-      type: vuln.type || category,
+      param: vuln.parameter || vuln.param || (category === "bruteforce" ? "credentials" : vuln.match_basis),
+      payload: vuln.payload || (category === "bruteforce" ? `${vuln.username} / ${vuln.password}` : vuln.id),
+      type: vuln.id || vuln.type || category,
       category,
       severity: sev,
     };
@@ -733,7 +872,9 @@
   }
 
   // ── Severity helpers ───────────────────────────────────────
-  function getSeverity(cat, type) {
+  function getSeverity(cat, type, severity) {
+    if (severity) return severity;
+    if (cat === "cms") return "medium";
     if (cat === "lfi") return "critical";
     if (cat === "sqli") return type === "error-based" ? "critical" : "high";
     if (cat === "xss")  return type === "stored" ? "critical" : type === "reflected" ? "high" : "medium";
@@ -788,6 +929,10 @@
     scanStart = Date.now();
     curPct = 0;
     resetOverlayState();
+    clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(() => {
+      metrics.elapsed.textContent = `${((Date.now() - scanStart) / 1000).toFixed(1)}s`;
+    }, 250);
     overlay.classList.remove("hidden");
     ovStatus.textContent = "Connected — scan starting…";
     addLog("Scan engine connected.", "info");
@@ -805,31 +950,55 @@
         setPhase(ev.data.phase, ev.data.status, ev.data.count);
       }
 
+      if (ev.type === "progress") {
+        setPhaseProgress(ev.data.phase, ev.data);
+      }
+
+      if (ev.type === "crawl_page") {
+        updateLivePage(ev.data);
+      }
+
+      if (ev.type === "port") {
+        updateLivePort(ev.data);
+      }
+
       if (ev.type === "vuln") {
         addFinding(ev.data.category, ev.data.data);
       }
 
       if (ev.type === "done") {
         es.close();
-        setProgress(100, "Scan complete!");
-        addLog("✓ All phases complete — report ready.", "success");
-    goReport.href = `/report/${ev.data.scan_id}`;
-        if (ev.data.status === "completed") {
-          goReport.classList.add("show");
+        clearInterval(elapsedTimer);
+        metrics.elapsed.textContent = `${((Date.now() - scanStart) / 1000).toFixed(1)}s`;
+        const finalStatus = ev.data.status || "completed";
+        const completed = finalStatus === "completed";
+        setProgress(100, completed ? "Scan complete!" : `Scan ${finalStatus}.`);
+        if (completed) {
+          addLog("Scan completed — report ready.", "success");
+        } else if (finalStatus === "cancelled") {
+          addLog("Scan was cancelled. A partial report is available with everything collected before cancellation.", "warn");
         } else {
-          goReport.classList.remove("show");
+          addLog(`Scan ended with status: ${finalStatus}. A partial report may still be useful.`, "warn");
         }
+        goReport.href = `/report/${ev.data.scan_id}`;
+        goReport.textContent = completed ? "View Report →" : "View Partial Report →";
+        goReport.classList.add("show");
+        backDashboard.classList.add("show");
         cancelBtn.style.display = "none";
-        if (ev.data.status === "cancelled") {
-          addLog("Scan was cancelled before completion.", "warn");
-        }
       }
 
       if (ev.type === "error") {
         es.close();
+        clearInterval(elapsedTimer);
         setProgress(100, "Scan failed.");
         addLog(`Error: ${ev.data.msg}`, "error");
         cancelBtn.style.display = "none";
+        if (activeScanId) {
+          goReport.href = `/report/${activeScanId}`;
+          goReport.textContent = "View Partial Report →";
+          goReport.classList.add("show");
+        }
+        backDashboard.classList.add("show");
       }
     };
 
@@ -852,6 +1021,13 @@
       }
       addLog(`Cancellation status: ${data.status}.`, "warn");
       ovStatus.textContent = "Cancelling scan...";
+      if (data.status === "cancelled") {
+        cancelBtn.style.display = "none";
+        goReport.href = `/report/${activeScanId}`;
+        goReport.textContent = "View Partial Report →";
+        goReport.classList.add("show");
+        backDashboard.classList.add("show");
+      }
     } catch (err) {
       addLog(err.message, "error");
     } finally {

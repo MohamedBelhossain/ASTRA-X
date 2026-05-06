@@ -320,7 +320,7 @@ def _attempt_login(session, form, username, password):
 
 # ── Public API ───────────────────────────────────────────────────────────
 
-def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
+def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None, on_progress=None, on_finding=None):
     """
     Main entry point.
 
@@ -360,6 +360,8 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
     }
 
     session = _session()
+    if on_progress:
+        on_progress({"stage": "waf", "checked": 0})
 
     # ── Step 1: WAF detection ────────────────────────────────────────────
     try:
@@ -375,7 +377,7 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
 
         # Probe with malicious payloads
         probe_url = target.rstrip("/") + "/?q="
-        for payload in WAF_PROBE_PAYLOADS:
+        for probe_index, payload in enumerate(WAF_PROBE_PAYLOADS, start=1):
             if should_stop_scan(should_stop):
                 break
             try:
@@ -397,6 +399,8 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
                 time.sleep(0.15)   # be polite
             except Exception:
                 pass   # connection reset = likely blocked too
+            if on_progress:
+                on_progress({"stage": "waf", "checked": probe_index, "total": len(WAF_PROBE_PAYLOADS)})
     except Exception as e:
         result["waf_detail"] = f"Error during WAF probe: {e}"
         return result
@@ -415,12 +419,20 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
         return result
 
     result["rate_limit_probe"] = _test_request_rate_limit(session, target, should_stop=should_stop)
+    if on_progress:
+        on_progress({
+            "stage": "rate-limit",
+            "checked": result["rate_limit_probe"].get("requests_sent", 0),
+            "blocked": result["rate_limit_probe"].get("blocked", False),
+        })
 
     # ── Step 2: Find login forms ─────────────────────────────────────────
     candidate_pages = _iter_candidate_pages(target, pages=pages)
     result["candidate_pages"] = len(candidate_pages)
     forms = _find_login_forms(candidate_pages, session, should_stop=should_stop)
     result["login_forms"] = len(forms)
+    if on_progress:
+        on_progress({"stage": "forms", "checked": len(candidate_pages), "forms": len(forms)})
 
     if not forms:
         return result
@@ -437,10 +449,12 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
                 break
             result["attempts"] += 1
             attempt = _attempt_login(session, form, username, password)
+            if on_progress:
+                on_progress({"stage": "attempts", "checked": result["attempts"], "forms": len(forms)})
             time.sleep(0.1)   # throttle
 
             if attempt.get("success"):
-                result["credentials_found"].append({
+                finding = {
                     "username":    attempt["username"],
                     "password":    attempt["password"],
                     "url":         attempt.get("page_url") or form["url"],
@@ -449,7 +463,13 @@ def scan_bruteforce(target, pages=None, wordlist=None, should_stop=None):
                     "redirect":    attempt.get("redirect"),
                     "method":      attempt.get("method"),
                     "type":        "Valid credentials discovered",
-                })
+                    "severity":    "critical",
+                    "confidence":  "confirmed",
+                    "evidence":    "Valid credentials accepted by target",
+                }
+                result["credentials_found"].append(finding)
+                if on_finding:
+                    on_finding(finding)
                 found = True
                 break   # stop on first valid cred per form
 

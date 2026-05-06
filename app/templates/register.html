@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="auth-page">
-<div class="page-shell" style="max-width:520px">
+<div class="page-shell auth-narrow-shell">
   <section class="shell-card">
     <div class="window-bar">
       <span class="window-dot r"></span>
@@ -50,13 +50,27 @@
         <div class="field-row">
           <label>Password</label>
           <input type="password" name="password" placeholder="••••••••"
-                 minlength="6" required>
+                 minlength="{{ min_password_length or 10 }}" required>
         </div>
 
         <div class="field-row">
           <label>Confirm Password</label>
           <input type="password" name="confirm_password" placeholder="••••••••"
-                 minlength="6" required>
+                 minlength="{{ min_password_length or 10 }}" required>
+        </div>
+
+        <div class="field-row bot-field" aria-hidden="true">
+          <label>Company Website</label>
+          <input type="text" name="company_website" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="field-row">
+          <label>Security Check</label>
+          <div class="captcha-row">
+            <span class="captcha-question">{{ captcha.question if captcha else '' }}</span>
+            <input type="text" inputmode="numeric" pattern="[0-9]*" name="captcha_answer"
+                   placeholder="answer" autocomplete="off" required>
+          </div>
         </div>
 
         <button type="submit">Create Account</button>

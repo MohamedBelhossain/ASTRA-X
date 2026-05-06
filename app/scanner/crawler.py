@@ -144,7 +144,11 @@ def get_links(url, diagnostics=None):
     return links, diagnostics
 
 
-def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False):
+def _is_static_url(url):
+    return urlparse(url).path.lower().endswith(STATIC_SUFFIXES)
+
+
+def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False, on_page=None):
     visited_urls = set()
     to_visit = [normalize(target)]
     discovered = set()
@@ -161,6 +165,9 @@ def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False):
 
         visited_urls.add(url)
         discovered.add(url)
+        page_count = len([page for page in discovered if not _is_static_url(page)])
+        if on_page and not _is_static_url(url):
+            on_page(url, page_count)
 
         links, diagnostics = get_links(url, diagnostics=diagnostics)
         for link in sorted(links):
@@ -172,7 +179,7 @@ def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False):
     pages = [
         page
         for page in discovered
-        if not urlparse(page).path.lower().endswith(STATIC_SUFFIXES)
+        if not _is_static_url(page)
     ]
     pages = sorted(pages)
     if return_diagnostics:
