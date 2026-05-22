@@ -329,6 +329,28 @@
     }
     .err-banner.show { display: block; }
 
+    .usage-warning {
+      border: 1px solid rgba(255,214,0,.22);
+      border-radius: 8px;
+      background: rgba(255,214,0,.06);
+      padding: 11px 13px;
+      margin: 12px 0 14px;
+    }
+    .usage-warning-title {
+      display: block;
+      color: #d8bc35;
+      font-size: .66rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .usage-warning-copy {
+      color: #b89040;
+      font-size: .78rem;
+      line-height: 1.55;
+    }
+
     .mode-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -425,6 +447,10 @@
             <div class="field-row">
               <label>Target URL</label>
               <input id="url-input" type="text" name="url" placeholder="https://example.com" required>
+            </div>
+            <div class="usage-warning">
+              <span class="usage-warning-title">Responsibility Notice</span>
+              <div class="usage-warning-copy">{{ usage_notice }}</div>
             </div>
             <div class="field-row">
               <label>Scan Mode</label>

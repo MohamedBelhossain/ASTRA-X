@@ -211,6 +211,29 @@
       margin-bottom: 1.4rem;
     }
 
+    .usage-warning {
+      border: 1px solid rgba(255,183,0,0.28);
+      border-radius: 8px;
+      background: rgba(255,183,0,0.07);
+      padding: 1rem 1.15rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .usage-warning-label {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 0.45rem;
+    }
+
+    .usage-warning-text {
+      font-size: 0.8rem;
+      color: #c8a84a;
+      line-height: 1.55;
+    }
+
     .connect-label {
       font-family: var(--mono);
       font-size: 0.62rem;
@@ -421,6 +444,11 @@
               <a href="{{ url_for('auth.register') }}" class="btn-secondary">Register</a>
             {% endif %}
           </div>
+        </div>
+
+        <div class="usage-warning">
+          <div class="usage-warning-label">// Responsibility Notice</div>
+          <div class="usage-warning-text">{{ usage_notice }}</div>
         </div>
       </div>
 

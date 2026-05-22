@@ -27,6 +27,7 @@ from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.subdomain_scanner import scan_subdomains
 from app.scanner.xss_scanner import scan_xss
 from app.scanner.common import session_headers
+from app.reporting import SCAN_USAGE_NOTICE, build_risk_summary, empty_risk_summary
 from app.security import bool_env, register_template_helpers, resolve_public_target
 
 app = Flask(__name__)
@@ -122,6 +123,8 @@ def default_report(scan_mode, target):
     return {
         "scan_mode": scan_mode,
         "target_url": target,
+        "usage_notice": SCAN_USAGE_NOTICE,
+        "risk_summary": empty_risk_summary(),
         "pages_scanned": 0,
         "pages": [],
         "crawl_diagnostics": {
@@ -339,6 +342,8 @@ def _is_lfi_candidate(url):
 
 
 def finalize_scan(scan_id, status, report, last_error=None):
+    report["usage_notice"] = SCAN_USAGE_NOTICE
+    report["risk_summary"] = build_risk_summary(report)
     ScanRecord.finalize_report(scan_id, report)
     ScanRecord.update_status(scan_id, status, last_error=last_error)
     push(scan_id, "done", {"scan_id": scan_id, "status": status, "error": last_error})
@@ -815,8 +820,8 @@ def render_report_not_found():
 @app.route("/", methods=["GET"])
 def home():
     if current_user.is_authenticated:
-        return render_template("landing.html", logged_in=True)
-    return render_template("landing.html", logged_in=False)
+        return render_template("landing.html", logged_in=True, usage_notice=SCAN_USAGE_NOTICE)
+    return render_template("landing.html", logged_in=False, usage_notice=SCAN_USAGE_NOTICE)
 
 
 @app.route("/dashboard", methods=["GET"])
@@ -826,6 +831,7 @@ def index():
         "index.html",
         scan_quota=get_scan_quota_context(current_user.id),
         scan_history=ScanRecord.list_for_user(current_user.id, limit=12),
+        usage_notice=SCAN_USAGE_NOTICE,
     )
 
 
@@ -895,6 +901,7 @@ def start_scan():
         scan_mode=scan_mode,
     )
     log(scan_id, f"Scan queued for {target_info['target']} ({', '.join(target_info['addresses'])}).")
+    log(scan_id, SCAN_USAGE_NOTICE, "warn")
     if preflight_warning:
         log(scan_id, preflight_warning, "warn")
 

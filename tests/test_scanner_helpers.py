@@ -5,6 +5,7 @@ from app.scanner.common import response_excerpt
 from app.scanner.crawler import normalize
 from app.scanner.cms_scanner import detect_cms, lookup_cves
 from app.scanner.header_scanner import scan_security_headers
+from app.reporting import build_risk_summary
 
 
 class FakeResponse:
@@ -99,6 +100,32 @@ class ScannerHelpersTest(unittest.TestCase):
         finding_types = {finding["type"] for finding in result["findings"]}
         self.assertIn("Missing Content-Security-Policy", finding_types)
         self.assertIn("Missing X-Frame-Options", finding_types)
+
+    def test_build_risk_summary_counts_cross_scanner_findings(self):
+        report = {
+            "vulnerabilities": [{"type": "error-based"}],
+            "xss_vulnerabilities": [{"type": "reflected"}],
+            "lfi_vulnerabilities": [{"type": "path traversal"}],
+            "header_result": {"findings": [{"severity": "medium"}]},
+            "cms_result": {"cves": [{"severity": "high"}]},
+            "bruteforce_result": {
+                "credentials_found": [{"username": "admin", "password": "admin"}],
+                "rate_limit_probe": {"tested": True, "blocked": False},
+            },
+            "file_findings": [{"severity": "high"}],
+            "subdomain_findings": [{"severity": "low"}],
+            "crawl_diagnostics": {"anti_bot_detected": True},
+        }
+
+        summary = build_risk_summary(report)
+
+        self.assertEqual(summary["risk_level"], "critical")
+        self.assertEqual(summary["severity_counts"]["critical"], 3)
+        self.assertEqual(summary["severity_counts"]["high"], 3)
+        self.assertEqual(summary["severity_counts"]["medium"], 2)
+        self.assertEqual(summary["severity_counts"]["low"], 2)
+        self.assertEqual(summary["total_findings"], 10)
+        self.assertTrue(summary["recommendations"])
 
 
 if __name__ == "__main__":

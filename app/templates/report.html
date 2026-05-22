@@ -136,6 +136,80 @@
         font-size: clamp(16px, 1.8vw, 21px);
         letter-spacing: .03em;
       }
+      .risk-panel {
+        margin-top: 18px;
+        border: 1px solid #202820;
+        background: #0d100f;
+        border-radius: 8px;
+        padding: 16px;
+      }
+      .risk-panel-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .risk-panel-title {
+        color: #ddd;
+        font-weight: 700;
+      }
+      .risk-level {
+        margin-left: auto;
+        border-radius: 999px;
+        border: 1px solid #333;
+        padding: 3px 10px;
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .risk-level.critical { color: #ff5050; border-color: #ff505066; }
+      .risk-level.high { color: #ff8c00; border-color: #ff8c0066; }
+      .risk-level.medium { color: #ffd600; border-color: #ffd60055; }
+      .risk-level.low { color: #00bcd4; border-color: #00bcd455; }
+      .risk-level.info,
+      .risk-level.none { color: #888; border-color: #444; }
+      .severity-strip {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .severity-chip {
+        border: 1px solid #202020;
+        background: #101010;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .severity-chip strong {
+        display: block;
+        color: #ddd;
+        font-size: 1.05rem;
+      }
+      .severity-chip span {
+        color: #666;
+        font-size: .7rem;
+        text-transform: uppercase;
+      }
+      .risk-recs {
+        margin: 0;
+        padding-left: 18px;
+        color: #aaa;
+        line-height: 1.65;
+      }
+      .usage-notice {
+        margin-top: 14px;
+        color: #d9bd61;
+        border: 1px solid #2b2415;
+        background: rgba(255, 193, 7, .06);
+        border-radius: 8px;
+        padding: 11px 13px;
+        font-size: .84rem;
+      }
+      @media (max-width: 760px) {
+        .severity-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .risk-panel-head { align-items: flex-start; flex-direction: column; }
+        .risk-level { margin-left: 0; }
+      }
     </style>
     {% endif %}
   </head>
@@ -222,6 +296,32 @@
           <div class="status-note">
             This is a partial report. The scan status is {{ status | upper }}, so only phases that finished before the scan stopped are shown.
           </div>
+        {% endif %}
+        {% set risk = risk_summary or {} %}
+        {% set severity_counts = risk.severity_counts or {} %}
+        <div class="risk-panel">
+          <div class="risk-panel-head">
+            <span class="risk-panel-title">Risk Summary</span>
+            <span class="risk-level {{ risk.risk_level or 'none' }}">{{ risk.risk_level or 'none' }}</span>
+          </div>
+          <div class="severity-strip">
+            {% for sev in ["critical", "high", "medium", "low", "info"] %}
+              <div class="severity-chip">
+                <strong>{{ severity_counts.get(sev, 0) }}</strong>
+                <span>{{ sev }}</span>
+              </div>
+            {% endfor %}
+          </div>
+          {% if risk.recommendations %}
+            <ul class="risk-recs">
+              {% for item in risk.recommendations %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+        {% if usage_notice %}
+          <div class="usage-notice">{{ usage_notice }}</div>
         {% endif %}
       </div>
 
