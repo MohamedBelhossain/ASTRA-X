@@ -3,13 +3,14 @@ import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import wraps
 from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests as req
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, make_response, render_template, request, url_for
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_required
 from weasyprint import HTML
 
@@ -97,6 +98,34 @@ def load_user(user_id):
     return User.find_by_id(user_id)
 
 
+def admin_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not current_user.is_admin:
+            if request.path.startswith(("/start-scan", "/cancel-scan", "/stream", "/export")):
+                return jsonify({"error": "Admin access required."}), 403
+            return render_template("error.html", message="Admin access required."), 403
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def ensure_bootstrap_admin():
+    email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
+    password = os.environ.get("ADMIN_PASSWORD", "").strip()
+
+    if not email or not password:
+        return
+
+    User.ensure_admin(
+        username=username,
+        email=email,
+        hashed_password=bcrypt.generate_password_hash(password).decode("utf-8"),
+    )
+
+
 @app.before_request
 def _ensure_indexes():
     if getattr(app, "_indexes_created", False):
@@ -107,6 +136,7 @@ def _ensure_indexes():
         ResetToken.ensure_indexes()
         RateLimitBucket.ensure_indexes()
         ScanRecord.ensure_indexes()
+        ensure_bootstrap_admin()
         if not getattr(app, "_interrupted_scans_recovered", False):
             recovered = ScanRecord.mark_interrupted_active(
                 "Scan worker was interrupted by an application restart. Please start a new scan."
@@ -255,7 +285,21 @@ def raise_if_cancelled(scan_id):
 
 
 def user_owns_scan(scan_id):
+    if current_user.is_admin:
+        return bool(ScanRecord.find_by_scan_id(scan_id))
     return bool(ScanRecord.find_owned(scan_id, current_user.id))
+
+
+def scan_doc_for_current_user(scan_id):
+    if current_user.is_admin:
+        return ScanRecord.find_by_scan_id(scan_id)
+    return ScanRecord.find_owned(scan_id, current_user.id)
+
+
+def report_for_current_user(scan_id):
+    if current_user.is_admin:
+        return ScanRecord.serializable_report(scan_id)
+    return ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
 
 
 def validate_target_reachable(target):
@@ -825,7 +869,7 @@ def home():
 
 
 @app.route("/dashboard", methods=["GET"])
-@login_required
+@admin_required
 def index():
     return render_template(
         "index.html",
@@ -835,8 +879,27 @@ def index():
     )
 
 
+@app.route("/admin", methods=["GET"])
+@admin_required
+def admin_dashboard():
+    scan_statuses = ScanRecord.count_by_status()
+    return render_template(
+        "admin.html",
+        stats={
+            "users": User.count_all(),
+            "admins": User.count_admins(),
+            "scans": ScanRecord.count_all(),
+            "active_scans": sum(scan_statuses.get(status, 0) for status in ScanRecord.ACTIVE_STATUSES),
+            "completed_scans": scan_statuses.get("completed", 0),
+            "failed_scans": scan_statuses.get("failed", 0),
+        },
+        recent_users=User.list_recent(limit=8),
+        recent_scans=ScanRecord.list_recent(limit=10),
+    )
+
+
 @app.route("/start-scan", methods=["POST"])
-@login_required
+@admin_required
 def start_scan():
     target = request.form.get("url", "").strip()
     scan_mode = request.form.get("scan_mode", "deep").strip().lower()
@@ -919,7 +982,7 @@ def start_scan():
 
 
 @app.route("/cancel-scan/<scan_id>", methods=["POST"])
-@login_required
+@admin_required
 def cancel_scan(scan_id):
     if not user_owns_scan(scan_id):
         return jsonify({"error": "Scan not found."}), 404
@@ -931,7 +994,12 @@ def cancel_scan(scan_id):
         push(scan_id, "done", {"scan_id": scan_id, "status": "cancelled"})
         return jsonify({"status": "cancelled"})
 
-    if ScanRecord.request_cancel(scan_id, current_user.id):
+    cancel_requested = (
+        ScanRecord.request_cancel_any(scan_id)
+        if current_user.is_admin
+        else ScanRecord.request_cancel(scan_id, current_user.id)
+    )
+    if cancel_requested:
         log(scan_id, "Cancellation requested. The active worker will stop at the next safe checkpoint.", "warn")
         return jsonify({"status": "cancelling"})
 
@@ -939,14 +1007,12 @@ def cancel_scan(scan_id):
 
 
 @app.route("/stream/<scan_id>")
-@login_required
+@admin_required
 def stream(scan_id):
-    owner_id = current_user.id
-
     def generate():
         cursor = 0
         while True:
-            doc = ScanRecord.find_owned(scan_id, owner_id)
+            doc = scan_doc_for_current_user(scan_id)
             if not doc:
                 yield f"data: {json.dumps({'type': 'error', 'data': {'msg': 'Scan not found.'}})}\n\n"
                 return
@@ -971,9 +1037,9 @@ def stream(scan_id):
 
 
 @app.route("/report/<scan_id>")
-@login_required
+@admin_required
 def report(scan_id):
-    data = ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
+    data = report_for_current_user(scan_id)
     if not data:
         return render_report_not_found()
     return render_template(
@@ -985,9 +1051,9 @@ def report(scan_id):
 
 
 @app.route("/download/<scan_id>")
-@login_required
+@admin_required
 def download(scan_id):
-    data = ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
+    data = report_for_current_user(scan_id)
     if not data:
         return render_template("error.html", message="Scan report not found or expired.")
 
@@ -1019,9 +1085,9 @@ def download(scan_id):
 
 
 @app.route("/export/<scan_id>.json")
-@login_required
+@admin_required
 def export_json(scan_id):
-    data = ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
+    data = report_for_current_user(scan_id)
     if not data:
         return jsonify({"error": "Scan report not found."}), 404
     return jsonify(data)

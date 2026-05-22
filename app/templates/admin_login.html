@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-page">
+<div class="page-shell auth-narrow-shell">
+  <section class="shell-card admin-login-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">Admin Console</span>
+    </div>
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>Admin Login</h1>
+          <p class="subtitle">Restricted security workspace</p>
+        </div>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <div class="admin-security-note">
+        Administrator access is required to run scans, view scan reports, and export security data.
+      </div>
+
+      <form action="{{ url_for('auth.admin_login') }}" method="POST" class="form-stack">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="field-row">
+          <label>Admin Email</label>
+          <input type="email" name="email" placeholder="admin@example.com" required>
+        </div>
+        <div class="field-row">
+          <label>Password</label>
+          <input type="password" name="password" placeholder="••••••••" required>
+        </div>
+        <button type="submit">Enter Admin Console</button>
+      </form>
+
+      <div class="footer">
+        <a href="{{ url_for('home') }}">Back home</a>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

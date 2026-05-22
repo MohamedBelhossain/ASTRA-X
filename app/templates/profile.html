@@ -24,7 +24,9 @@
             <p class="subtitle">{{ current_user.email }}</p>
           </div>
         </div>
-        <a href="{{ url_for('index') }}" class="profile-dashboard-link">Dashboard</a>
+        <a href="{{ url_for('index') if current_user.is_admin else url_for('home') }}" class="profile-dashboard-link">
+          {{ "Dashboard" if current_user.is_admin else "Home" }}
+        </a>
       </div>
 
       {% with messages = get_flashed_messages(with_categories=true) %}

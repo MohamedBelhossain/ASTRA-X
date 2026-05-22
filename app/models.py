@@ -54,6 +54,10 @@ class User(UserMixin):
         return self._doc.get("is_verified", False)
 
     @property
+    def is_admin(self):
+        return self._doc.get("is_admin", False)
+
+    @property
     def pending_email(self):
         return self._doc.get("pending_email", "")
 
@@ -96,12 +100,56 @@ class User(UserMixin):
                 "email": email,
                 "password": hashed_password,
                 "is_verified": False,
+                "is_admin": False,
                 "recent_scan_starts": [],
                 "created_at": time.time(),
             }
         )
         doc = cls._col().find_one({"_id": result.inserted_id})
         return cls(doc)
+
+    @classmethod
+    def ensure_admin(cls, username, email, hashed_password):
+        existing = cls.find_by_email(email)
+        if existing:
+            cls._col().update_one(
+                {"_id": ObjectId(existing.id)},
+                {
+                    "$set": {
+                        "username": username,
+                        "password": hashed_password,
+                        "is_verified": True,
+                        "is_admin": True,
+                    }
+                },
+            )
+            return cls.find_by_id(existing.id)
+
+        result = cls._col().insert_one(
+            {
+                "username": username,
+                "email": email,
+                "password": hashed_password,
+                "is_verified": True,
+                "is_admin": True,
+                "recent_scan_starts": [],
+                "created_at": time.time(),
+            }
+        )
+        return cls(cls._col().find_one({"_id": result.inserted_id}))
+
+    @classmethod
+    def count_all(cls):
+        return cls._col().count_documents({})
+
+    @classmethod
+    def count_admins(cls):
+        return cls._col().count_documents({"is_admin": True})
+
+    @classmethod
+    def list_recent(cls, limit=20):
+        cursor = cls._col().find({}).sort("created_at", -1).limit(limit)
+        return [serialize_document(doc) for doc in cursor]
 
     @classmethod
     def consume_scan_quota(cls, user_id, window_seconds, max_scans, now=None):
@@ -476,6 +524,14 @@ class ScanRecord:
         return bool(result.modified_count)
 
     @classmethod
+    def request_cancel_any(cls, scan_id):
+        result = cls._col().update_one(
+            {"scan_id": scan_id, "status": {"$in": list(cls.ACTIVE_STATUSES)}},
+            {"$set": {"cancel_requested": True, "status": "cancelling"}},
+        )
+        return bool(result.modified_count)
+
+    @classmethod
     def is_cancel_requested(cls, scan_id):
         doc = cls.find_by_scan_id(scan_id)
         return bool(doc and doc.get("cancel_requested"))
@@ -536,8 +592,23 @@ class ScanRecord:
         return [serialize_document(doc) for doc in cursor]
 
     @classmethod
-    def serializable_report_for_owner(cls, scan_id, owner_id):
-        doc = cls.find_owned(scan_id, owner_id)
+    def list_recent(cls, limit=20):
+        cursor = cls._col().find({}).sort("created_at", -1).limit(limit)
+        return [serialize_document(doc) for doc in cursor]
+
+    @classmethod
+    def count_all(cls):
+        return cls._col().count_documents({})
+
+    @classmethod
+    def count_by_status(cls):
+        statuses = {}
+        for item in cls._col().aggregate([{"$group": {"_id": "$status", "count": {"$sum": 1}}}]):
+            statuses[item["_id"] or "unknown"] = item["count"]
+        return statuses
+
+    @classmethod
+    def _serializable_report_from_doc(cls, doc):
         if not doc:
             return None
         report = serialize_document(doc.get("report") or cls._base_report(doc.get("scan_mode", "deep"), doc.get("target_url", "")))
@@ -556,6 +627,14 @@ class ScanRecord:
             }
         )
         return report
+
+    @classmethod
+    def serializable_report(cls, scan_id):
+        return cls._serializable_report_from_doc(cls.find_by_scan_id(scan_id))
+
+    @classmethod
+    def serializable_report_for_owner(cls, scan_id, owner_id):
+        return cls._serializable_report_from_doc(cls.find_owned(scan_id, owner_id))
 
     @classmethod
     def serialized_events_for_owner(cls, scan_id, owner_id):

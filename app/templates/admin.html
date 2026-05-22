@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Console - WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="index-page">
+<div class="page-shell">
+  <section class="shell-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">Admin Console</span>
+    </div>
+    <div class="page-panel">
+      <div class="admin-header">
+        <div class="brand">
+          <div class="logo"></div>
+          <div>
+            <h1>Admin Console</h1>
+            <p class="subtitle">Security operations and scan administration</p>
+          </div>
+        </div>
+        <div class="admin-actions">
+          <a href="{{ url_for('index') }}" class="download-btn">Open Scanner</a>
+          <a href="{{ url_for('auth.profile') }}" class="back-link">Profile</a>
+          <form action="{{ url_for('auth.logout') }}" method="POST" style="margin:0;">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="secondary-button">Logout</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-badge"><span class="summary-num">{{ stats.users }}</span><span class="summary-label">Users</span></div>
+        <div class="summary-badge"><span class="summary-num">{{ stats.admins }}</span><span class="summary-label">Admins</span></div>
+        <div class="summary-badge"><span class="summary-num">{{ stats.scans }}</span><span class="summary-label">Total Scans</span></div>
+        <div class="summary-badge"><span class="summary-num">{{ stats.active_scans }}</span><span class="summary-label">Active Scans</span></div>
+        <div class="summary-badge badge-safe"><span class="summary-num">{{ stats.completed_scans }}</span><span class="summary-label">Completed</span></div>
+        <div class="summary-badge {{ 'badge-danger' if stats.failed_scans else '' }}"><span class="summary-num">{{ stats.failed_scans }}</span><span class="summary-label">Failed</span></div>
+      </div>
+
+      <div class="admin-grid">
+        <section class="section admin-panel">
+          <h3>Recent Users</h3>
+          {% if recent_users %}
+            <table>
+              <thead>
+                <tr><th>Username</th><th>Email</th><th>Role</th><th>Verified</th></tr>
+              </thead>
+              <tbody>
+                {% for user in recent_users %}
+                  <tr>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>{{ "ADMIN" if user.is_admin else "USER" }}</td>
+                    <td>{{ "YES" if user.is_verified else "NO" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="muted">No users yet.</p>
+          {% endif %}
+        </section>
+
+        <section class="section admin-panel">
+          <h3>Recent Scans</h3>
+          {% if recent_scans %}
+            <table>
+              <thead>
+                <tr><th>Target</th><th>Mode</th><th>Status</th><th>Report</th></tr>
+              </thead>
+              <tbody>
+                {% for scan in recent_scans %}
+                  <tr>
+                    <td>{{ scan.target_url }}</td>
+                    <td>{{ scan.scan_mode | upper }}</td>
+                    <td>{{ scan.status | upper }}</td>
+                    <td><a href="{{ url_for('report', scan_id=scan.scan_id) }}">Open</a></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="muted">No scans yet.</p>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

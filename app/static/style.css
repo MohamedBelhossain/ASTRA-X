@@ -123,6 +123,21 @@ a:hover {
   width: min(860px, 100%);
 }
 
+.admin-login-card {
+  border-color: rgba(255, 176, 32, .18);
+}
+
+.admin-security-note {
+  border: 1px solid rgba(255, 176, 32, .24);
+  border-radius: 10px;
+  background: rgba(255, 176, 32, .07);
+  color: #d9bd61;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: .86rem;
+  line-height: 1.55;
+}
+
 .landing-shell {
   width: min(1180px, 100%);
   overflow: hidden;
@@ -523,6 +538,47 @@ button:disabled {
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-actions .download-btn,
+.admin-actions .back-link {
+  margin-top: 0;
+}
+
+.admin-actions button {
+  width: auto;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.admin-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .02);
+  padding: 18px;
+  overflow-x: auto;
 }
 
 .account-links,
@@ -1398,8 +1454,17 @@ td {
   .profile-hero,
   .profile-overview,
   .profile-layout,
+  .admin-grid,
   .landing-hero {
     grid-template-columns: 1fr;
+  }
+
+  .admin-header {
+    flex-direction: column;
+  }
+
+  .admin-actions {
+    justify-content: flex-start;
   }
 
   .profile-account-bar {

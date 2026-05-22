@@ -441,6 +441,10 @@ def login():
             flash("Invalid email or password.", "danger")
             return redirect(url_for("auth.login"))
 
+        if user.is_admin:
+            flash("Admin accounts must use the admin login page.", "warning")
+            return redirect(url_for("auth.admin_login"))
+
         if not user.is_verified:
             flash("Please verify your email before logging in.", "warning")
             return redirect(url_for("auth.login"))
@@ -449,6 +453,41 @@ def login():
         return redirect(url_for("index"))
 
     return render_template("login.html")
+
+
+@auth.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if current_user.is_authenticated and current_user.is_admin:
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "POST":
+        email = normalize_email(request.form.get("email", ""))
+        password = request.form.get("password", "").strip()
+
+        if not _enforce_rate_limit(
+            "admin_login",
+            email or "anonymous",
+            limit=6,
+            window_seconds=900,
+            message="Too many admin login attempts. Try again in about {retry_after} seconds.",
+        ):
+            return redirect(url_for("auth.admin_login"))
+
+        user = User.find_by_email(email)
+        if (
+            not user
+            or not user.is_admin
+            or not user.is_verified
+            or not bcrypt.check_password_hash(user.password, password)
+        ):
+            flash("Invalid admin credentials.", "danger")
+            return redirect(url_for("auth.admin_login"))
+
+        login_user(user)
+        flash("Admin session started.", "success")
+        return redirect(url_for("admin_dashboard"))
+
+    return render_template("admin_login.html")
 
 
 @auth.route("/profile", methods=["GET", "POST"])
