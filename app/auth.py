@@ -147,6 +147,82 @@ def _enforce_rate_limit(namespace, subject, limit, window_seconds, message):
     return True
 
 
+def _profile_form_data():
+    return {
+        "username": current_user.username,
+        "email": current_user.email,
+    }
+
+
+PROFILE_TABS = {"overview", "update", "security"}
+
+
+def _profile_tab(default="overview"):
+    tab = request.args.get("tab", default)
+    return tab if tab in PROFILE_TABS else default
+
+
+def _render_profile(form_data=None, active_tab=None):
+    return render_template(
+        "profile.html",
+        form_data=form_data or _profile_form_data(),
+        active_tab=active_tab or _profile_tab(),
+        pending_email_expired=_is_pending_email_expired(current_user),
+        min_password_length=MIN_PASSWORD_LENGTH,
+    )
+
+
+def _email_change_subject(user_id, email):
+    return f"{user_id}:{email}"
+
+
+def _is_pending_email_expired(user):
+    return bool(user.pending_email and int(time.time()) > int(user.pending_email_expires_at or 0))
+
+
+def _issue_email_change_code(user_id, email):
+    code = generate_code()
+    return {
+        "code": code,
+        "code_hash": _hash_one_time_code("email_change", _email_change_subject(user_id, email), code),
+        "expires_at": _new_expiry_timestamp(),
+    }
+
+
+def _send_email_change_code(user_id, email):
+    token = _issue_email_change_code(user_id, email)
+    sent = _send_mail(
+        to=email,
+        subject="WebVulnScan - Verify your new email",
+        body=(
+            f"Your email change verification code is: {token['code']}\n\n"
+            "Expires in 10 minutes.\n"
+            "If you did not request this, ignore this email."
+        ),
+    )
+    return sent, token
+
+
+def _set_pending_email_after_delivery(user_id, email):
+    sent, token = _send_email_change_code(user_id, email)
+    if sent or _mail_console_fallback_enabled():
+        if not sent:
+            _handle_console_code_fallback("Email change", email, token["code"])
+        User.set_pending_email(
+            user_id=user_id,
+            email=email,
+            code_hash=token["code_hash"],
+            expires_at=token["expires_at"],
+        )
+        return True
+
+    flash(
+        "Email change could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+        "danger",
+    )
+    return False
+
+
 @auth.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
@@ -373,6 +449,172 @@ def login():
         return redirect(url_for("index"))
 
     return render_template("login.html")
+
+
+@auth.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    form_data = _profile_form_data()
+    active_tab = _profile_tab()
+
+    if request.method == "POST":
+        action = request.form.get("action", "profile")
+
+        if action == "profile":
+            active_tab = "update"
+            username = request.form.get("username", "").strip()
+            email = normalize_email(request.form.get("email", ""))
+            current_password = request.form.get("current_password", "").strip()
+            form_data = {"username": username, "email": email}
+
+            if not username or not email or not current_password:
+                flash("Username, email, and current password are required.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            if not bcrypt.check_password_hash(current_user.password, current_password):
+                flash("Current password is incorrect.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            existing_username = User.find_by_username(username)
+            if existing_username and existing_username.id != current_user.id:
+                flash("Username already taken.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            existing_email = User.find_by_email(email)
+            if existing_email and existing_email.id != current_user.id:
+                flash("Email already registered.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            username_changed = username != current_user.username
+            email_changed = email != current_user.email
+
+            if username_changed:
+                User.update_username(current_user.id, username=username)
+
+            if email_changed:
+                if _set_pending_email_after_delivery(current_user.id, email):
+                    flash(
+                        "Profile saved. A verification code was sent to your new email; your current email stays active until you verify it.",
+                        "success",
+                    )
+                elif username_changed:
+                    flash("Username updated, but the email verification message could not be sent.", "warning")
+            elif current_user.pending_email:
+                User.clear_pending_email(current_user.id)
+                flash("Profile updated. Pending email change was cancelled because you kept your current email.", "success")
+            else:
+                flash("Profile updated successfully.", "success")
+
+            return redirect(url_for("auth.profile", tab="overview"))
+
+        if action == "password":
+            active_tab = "security"
+            current_password = request.form.get("current_password", "").strip()
+            password = request.form.get("password", "").strip()
+            confirm = request.form.get("confirm_password", "").strip()
+
+            if not current_password or not password or not confirm:
+                flash("All password fields are required.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            if not bcrypt.check_password_hash(current_user.password, current_password):
+                flash("Current password is incorrect.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            if password != confirm:
+                flash("New passwords do not match.", "danger")
+                return _render_profile(form_data, active_tab=active_tab)
+
+            if len(password) < MIN_PASSWORD_LENGTH:
+                flash(
+                    f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
+                    "danger",
+                )
+                return _render_profile(form_data, active_tab=active_tab)
+
+            hashed = bcrypt.generate_password_hash(password).decode("utf-8")
+            User.update_password_by_id(current_user.id, hashed_password=hashed)
+            flash("Password updated successfully.", "success")
+            return redirect(url_for("auth.profile", tab="security"))
+
+        flash("Unknown profile action.", "danger")
+
+    return _render_profile(form_data, active_tab=active_tab)
+
+
+@auth.route("/profile/email/verify", methods=["POST"])
+@login_required
+def verify_profile_email():
+    code = sanitize_code(request.form.get("code", ""))
+    user = User.find_by_id(current_user.id)
+
+    if not user or not user.pending_email:
+        flash("No email change is waiting for verification.", "warning")
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    if _is_pending_email_expired(user):
+        flash("Email change code expired. Request a new code below.", "danger")
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    if len(code) != 6:
+        flash("Enter the 6-digit email verification code.", "danger")
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    existing_email = User.find_by_email(user.pending_email)
+    if existing_email and existing_email.id != current_user.id:
+        User.clear_pending_email(current_user.id)
+        flash("That email was taken before verification completed. Please choose another email.", "danger")
+        return redirect(url_for("auth.profile", tab="update"))
+
+    if not code_matches(
+        current_app.config["SECRET_KEY"],
+        "email_change",
+        _email_change_subject(current_user.id, user.pending_email),
+        code,
+        user._doc.get("pending_email_code_hash", ""),
+    ):
+        flash("Invalid email verification code.", "danger")
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    User.apply_pending_email(current_user.id)
+    flash("New email verified and applied successfully.", "success")
+    return redirect(url_for("auth.profile", tab="overview"))
+
+
+@auth.route("/profile/email/resend", methods=["POST"])
+@login_required
+def resend_profile_email_code():
+    user = User.find_by_id(current_user.id)
+    if not user or not user.pending_email:
+        flash("No email change is waiting for verification.", "warning")
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    existing_email = User.find_by_email(user.pending_email)
+    if existing_email and existing_email.id != current_user.id:
+        User.clear_pending_email(current_user.id)
+        flash("That email is already registered. Pending email change was cancelled.", "danger")
+        return redirect(url_for("auth.profile", tab="update"))
+
+    if not _enforce_rate_limit(
+        "profile_email_resend",
+        user.pending_email,
+        limit=5,
+        window_seconds=3600,
+        message="Too many email verification requests. Try again in about {retry_after} seconds.",
+    ):
+        return redirect(url_for("auth.profile", tab="overview"))
+
+    if _set_pending_email_after_delivery(current_user.id, user.pending_email):
+        flash("A new verification code has been sent to your pending email.", "success")
+    return redirect(url_for("auth.profile", tab="overview"))
+
+
+@auth.route("/profile/email/cancel", methods=["POST"])
+@login_required
+def cancel_profile_email_change():
+    User.clear_pending_email(current_user.id)
+    flash("Pending email change cancelled. Your current email was kept.", "success")
+    return redirect(url_for("auth.profile", tab="overview"))
 
 
 @auth.route("/forgot-password", methods=["GET", "POST"])

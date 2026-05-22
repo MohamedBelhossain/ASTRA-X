@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile - WebVulnScan</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-page">
+<div class="page-shell profile-shell">
+  <section class="shell-card">
+    <div class="window-bar">
+      <span class="window-dot r"></span>
+      <span class="window-dot y"></span>
+      <span class="window-dot g"></span>
+      <span class="window-title">Account Settings</span>
+    </div>
+    <div class="page-panel">
+      <div class="profile-account-bar">
+        <div class="profile-identity">
+          <div class="profile-avatar profile-avatar-large">{{ current_user.username[:1] | upper }}</div>
+          <div>
+            <h1>{{ current_user.username }}</h1>
+            <p class="subtitle">{{ current_user.email }}</p>
+          </div>
+        </div>
+        <a href="{{ url_for('index') }}" class="profile-dashboard-link">Dashboard</a>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <div class="profile-layout">
+        <aside class="profile-sidebar">
+          <a class="{{ 'active' if active_tab == 'overview' else '' }}" href="{{ url_for('auth.profile', tab='overview') }}">Show information</a>
+          <a class="{{ 'active' if active_tab == 'update' else '' }}" href="{{ url_for('auth.profile', tab='update') }}">Update information</a>
+          <a class="{{ 'active' if active_tab == 'security' else '' }}" href="{{ url_for('auth.profile', tab='security') }}">Password</a>
+          <form action="{{ url_for('auth.logout') }}" method="POST">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Logout</button>
+          </form>
+        </aside>
+
+        <main class="profile-content">
+          {% if active_tab == "overview" %}
+            <section class="profile-panel profile-single-panel">
+              <div class="profile-section-head">
+                <h3>Account Information</h3>
+                <p class="muted">Your current account details and verification state.</p>
+              </div>
+              <div class="profile-info-list">
+                <div class="profile-info-row">
+                  <span>Username</span>
+                  <strong>{{ current_user.username }}</strong>
+                </div>
+                <div class="profile-info-row">
+                  <span>Email</span>
+                  <strong>{{ current_user.email }}</strong>
+                </div>
+                {% if current_user.pending_email %}
+                <div class="profile-info-row profile-info-row-warning">
+                  <span>Pending Email</span>
+                  <strong>{{ current_user.pending_email }}</strong>
+                </div>
+                {% endif %}
+                <div class="profile-info-row">
+                  <span>Verification</span>
+                  <strong>
+                    {% if current_user.pending_email %}
+                      Waiting for new email verification
+                    {% else %}
+                      {{ "Verified" if current_user.is_verified else "Not verified" }}
+                    {% endif %}
+                  </strong>
+                </div>
+              </div>
+              {% if current_user.pending_email %}
+                <div class="pending-email-box">
+                  <div>
+                    <strong>Verify new email</strong>
+                    <p>
+                      Your login email is still <span>{{ current_user.email }}</span>.
+                      The new email will only replace it after verification.
+                    </p>
+                    {% if pending_email_expired %}
+                      <p class="pending-email-warning">The last code expired. Request a new code before verifying.</p>
+                    {% endif %}
+                  </div>
+                  <form action="{{ url_for('auth.verify_profile_email') }}" method="POST" class="pending-email-form">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="code" placeholder="123456"
+                           maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+                    <button type="submit">Verify</button>
+                  </form>
+                  <div class="pending-email-actions">
+                    <form action="{{ url_for('auth.resend_profile_email_code') }}" method="POST">
+                      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit">Resend code</button>
+                    </form>
+                    <form action="{{ url_for('auth.cancel_profile_email_change') }}" method="POST">
+                      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit">Cancel change</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
+            </section>
+          {% elif active_tab == "update" %}
+            <section class="profile-panel profile-single-panel">
+              <div class="profile-section-head">
+                <h3>Update Information</h3>
+                <p class="muted">Change your username or email. Current password confirmation protects your account.</p>
+              </div>
+              <form action="{{ url_for('auth.profile', tab='update') }}" method="POST" class="form-stack">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="profile">
+                <div class="field-row">
+                  <label>Username</label>
+                  <input type="text" name="username" value="{{ form_data.username }}" required>
+                </div>
+                <div class="field-row">
+                  <label>Email</label>
+                  <input type="email" name="email" value="{{ form_data.email }}" required>
+                </div>
+                <div class="field-row">
+                  <div class="field-label-row">
+                    <label>Current Password</label>
+                    <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+                  </div>
+                  <input type="password" name="current_password" placeholder="Confirm changes" required>
+                </div>
+                <button type="submit">Save Information</button>
+              </form>
+            </section>
+          {% elif active_tab == "security" %}
+            <section class="profile-panel profile-single-panel">
+              <div class="profile-section-head">
+                <h3>Password</h3>
+                <p class="muted">Choose a strong password with at least {{ min_password_length or 10 }} characters.</p>
+              </div>
+              <form action="{{ url_for('auth.profile', tab='security') }}" method="POST" class="form-stack">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="password">
+                <div class="field-row">
+                  <div class="field-label-row">
+                    <label>Current Password</label>
+                    <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+                  </div>
+                  <input type="password" name="current_password" placeholder="Current password" required>
+                </div>
+                <div class="field-row">
+                  <label>New Password</label>
+                  <input type="password" name="password" placeholder="New password"
+                         minlength="{{ min_password_length or 10 }}" required>
+                </div>
+                <div class="field-row">
+                  <label>Confirm New Password</label>
+                  <input type="password" name="confirm_password" placeholder="Repeat new password"
+                         minlength="{{ min_password_length or 10 }}" required>
+                </div>
+                <button type="submit">Update Password</button>
+              </form>
+            </section>
+          {% endif %}
+        </main>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

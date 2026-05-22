@@ -54,6 +54,14 @@ class User(UserMixin):
         return self._doc.get("is_verified", False)
 
     @property
+    def pending_email(self):
+        return self._doc.get("pending_email", "")
+
+    @property
+    def pending_email_expires_at(self):
+        return self._doc.get("pending_email_expires_at", 0)
+
+    @property
     def recent_scan_starts(self):
         timestamps = self._doc.get("recent_scan_starts", [])
         return [float(ts) for ts in timestamps if isinstance(ts, (int, float))]
@@ -133,8 +141,67 @@ class User(UserMixin):
         cls._col().update_one({"email": email}, {"$set": {"is_verified": True}})
 
     @classmethod
+    def update_username(cls, user_id, username):
+        cls._col().update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"username": username}},
+        )
+
+    @classmethod
+    def update_password_by_id(cls, user_id, hashed_password):
+        cls._col().update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"password": hashed_password}},
+        )
+
+    @classmethod
     def update_password(cls, email, hashed_password):
         cls._col().update_one({"email": email}, {"$set": {"password": hashed_password}})
+
+    @classmethod
+    def set_pending_email(cls, user_id, email, code_hash, expires_at):
+        cls._col().update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$set": {
+                    "pending_email": email,
+                    "pending_email_code_hash": code_hash,
+                    "pending_email_expires_at": expires_at,
+                }
+            },
+        )
+
+    @classmethod
+    def clear_pending_email(cls, user_id):
+        cls._col().update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$unset": {
+                    "pending_email": "",
+                    "pending_email_code_hash": "",
+                    "pending_email_expires_at": "",
+                }
+            },
+        )
+
+    @classmethod
+    def apply_pending_email(cls, user_id):
+        user = cls.find_by_id(user_id)
+        if not user or not user.pending_email:
+            return False
+
+        cls._col().update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$set": {"email": user.pending_email, "is_verified": True},
+                "$unset": {
+                    "pending_email": "",
+                    "pending_email_code_hash": "",
+                    "pending_email_expires_at": "",
+                },
+            },
+        )
+        return True
 
     @classmethod
     def get_scan_quota_status(cls, user_id, window_seconds, max_scans, now=None):

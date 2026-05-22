@@ -483,11 +483,27 @@
         </div>
         <div class="hero-side account-panel">
           <div class="scan-actions">
-            <span class="user-chip"><strong>{{ current_user.username }}</strong></span>
-            <form action="{{ url_for('auth.logout') }}" method="POST" style="margin:0;">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="back-link" style="background:none; border:none; padding:0; cursor:pointer;">Logout</button>
-            </form>
+            <div class="profile-menu">
+              <button type="button" class="profile-trigger" aria-haspopup="true" aria-expanded="false">
+                <span class="profile-avatar">{{ current_user.username[:1] | upper }}</span>
+                <span class="profile-trigger-text">
+                  <strong>{{ current_user.username }}</strong>
+                  <small>{{ current_user.email }}</small>
+                </span>
+                <span class="profile-chevron">⌄</span>
+              </button>
+              <div class="profile-dropdown">
+                <a href="{{ url_for('auth.profile', tab='overview') }}">Show information</a>
+                <a href="{{ url_for('auth.profile', tab='update') }}">Update information</a>
+                <a href="{{ url_for('auth.profile', tab='security') }}">Change password</a>
+                <span class="profile-menu-divider"></span>
+                <a href="{{ url_for('index') }}">Dashboard</a>
+                <form action="{{ url_for('auth.logout') }}" method="POST">
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit">Logout</button>
+                </form>
+              </div>
+            </div>
           </div>
 
           <div class="field-row" style="margin-bottom:14px;">
