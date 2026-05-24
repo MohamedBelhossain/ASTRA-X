@@ -3,13 +3,11 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import requests
 
-from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import LFI_COMMON_PARAMS as COMMON_PARAMS, LFI_PAYLOADS as PAYLOADS
 
 REQUEST_TIMEOUT = 4
-
-session = requests.Session()
-session.headers.update(session_headers())
 
 
 def inject_payload(url, param, payload):
@@ -56,6 +54,7 @@ def scan_lfi(
     aggressive=False,
 ):
     print(f"\n[LFI] Scanning: {url}")
+    session = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     results = []
     found = set()
 

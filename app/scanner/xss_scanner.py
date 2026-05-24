@@ -3,10 +3,10 @@ import os
 from urllib.parse import urljoin
 
 import requests
-from requests.adapters import HTTPAdapter
 
 from app.form_parser import get_forms
-from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import XSS_DOM_PAYLOADS as DOM_PAYLOADS, XSS_PAYLOADS
 
 REQUEST_TIMEOUT = int(os.environ.get("XSS_REQUEST_TIMEOUT", "6"))
@@ -15,14 +15,6 @@ XSS_MAX_PARAMS_PER_FORM = int(os.environ.get("XSS_MAX_PARAMS_PER_FORM", "4"))
 XSS_MAX_REFLECTED_PAYLOADS = int(os.environ.get("XSS_MAX_REFLECTED_PAYLOADS", "4"))
 XSS_MAX_STORED_PAYLOADS = int(os.environ.get("XSS_MAX_STORED_PAYLOADS", "1"))
 
-
-def _make_session():
-    client = requests.Session()
-    client.headers.update(session_headers())
-    adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
-    client.mount("http://", adapter)
-    client.mount("https://", adapter)
-    return client
 
 DOM_SINK_MARKERS = (
     "location.hash",
@@ -81,7 +73,7 @@ def _detect_dom_sinks(html):
 def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
     print(f"\n[XSS] Scanning: {url}")
 
-    client = _make_session()
+    client = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     vulnerabilities = []
     found = set()
 

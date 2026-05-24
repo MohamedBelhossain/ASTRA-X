@@ -24,7 +24,8 @@ import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from app.form_parser import get_forms
-from app.scanner.common import session_headers, should_stop_scan
+from app.scanner.common import should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 
 # ── Constants ────────────────────────────────────────────────────────────
 
@@ -52,9 +53,7 @@ from app.scanner.payloads import (
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 def _session():
-    s = requests.Session()
-    s.headers.update(session_headers())
-    return s
+    return safe_scanner_session(timeout=REQUEST_TIMEOUT)
 
 
 def _has_waf_header(response):
@@ -125,7 +124,7 @@ def _find_login_forms(targets, session, should_stop=None):
         except Exception:
             continue
 
-        parser_forms = _find_forms_with_parser(r.url)
+        parser_forms = get_forms(r.url, client=session)
         fallback_forms = []
         if not parser_forms:
             for form in soup.find_all("form"):

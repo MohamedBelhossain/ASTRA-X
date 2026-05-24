@@ -3,11 +3,9 @@ import time
 from functools import lru_cache
 from urllib.parse import urljoin
 
-import requests
-from requests.adapters import HTTPAdapter
-
 from app.form_parser import get_forms
-from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import (
     SQLI_BOOLEAN_PAYLOADS as BOOLEAN_PAYLOADS,
     SQLI_ERROR_PAYLOADS as ERROR_PAYLOADS,
@@ -23,18 +21,6 @@ SQLI_MAX_BOOLEAN_PAIRS = int(os.environ.get("SQLI_MAX_BOOLEAN_PAIRS", "2"))
 SQLI_MAX_TIME_PAYLOADS = int(os.environ.get("SQLI_MAX_TIME_PAYLOADS", "1"))
 
 
-def _make_session():
-    client = requests.Session()
-    client.headers.update(session_headers())
-    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50)
-    client.mount("http://", adapter)
-    client.mount("https://", adapter)
-    return client
-
-
-session = _make_session()
-
-
 @lru_cache(maxsize=200)
 def get_forms_cached(url):
     return get_forms(url)
@@ -46,13 +32,13 @@ def _resolve_action(base_url, action):
     return urljoin(base_url, action)
 
 
-def _send(method, url, data, timeout=REQUEST_TIMEOUT):
+def _send(client, method, url, data, timeout=REQUEST_TIMEOUT):
     try:
         started = time.time()
         if method == "post":
-            response = session.post(url, data=data, timeout=timeout, allow_redirects=True)
+            response = client.post(url, data=data, timeout=timeout, allow_redirects=True)
         else:
-            response = session.get(url, params=data, timeout=timeout, allow_redirects=True)
+            response = client.get(url, params=data, timeout=timeout, allow_redirects=True)
         response.elapsed_seconds = round(time.time() - started, 2)
         return response
     except requests.exceptions.RequestException as exc:
@@ -88,6 +74,7 @@ def _append(vulnerabilities, finding):
 def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
     print(f"\n[*] Scanning: {url}")
 
+    client = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     vulnerabilities = []
     found_params = set()
 
@@ -126,7 +113,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
         )
 
         baseline_data = _build_data(inputs)
-        baseline_resp = _send(method, action, baseline_data)
+        baseline_resp = _send(client, method, action, baseline_data)
         if baseline_resp is None:
             print("  [!] Baseline request failed, skipping form.")
             continue
@@ -152,7 +139,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                     if should_stop_scan(should_stop):
                         break
                     data = _build_data(inputs, param, payload)
-                    response = _send(method, action, data)
+                    response = _send(client, method, action, data)
                     checked += 1
                     if on_progress:
                         on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
@@ -187,7 +174,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
             key = (action, param, "response-diff")
             if key not in found_params:
                 data = _build_data(inputs, param, "'")
-                response = _send(method, action, data)
+                response = _send(client, method, action, data)
                 checked += 1
                 if on_progress:
                     on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
@@ -219,8 +206,8 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                 for true_payload, false_payload in BOOLEAN_PAYLOADS[:SQLI_MAX_BOOLEAN_PAIRS]:
                     if should_stop_scan(should_stop):
                         break
-                    true_response = _send(method, action, _build_data(inputs, param, true_payload))
-                    false_response = _send(method, action, _build_data(inputs, param, false_payload))
+                    true_response = _send(client, method, action, _build_data(inputs, param, true_payload))
+                    false_response = _send(client, method, action, _build_data(inputs, param, false_payload))
                     checked += 2
                     if on_progress:
                         on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})
@@ -257,7 +244,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                 for payload in TIME_PAYLOADS[:SQLI_MAX_TIME_PAYLOADS]:
                     if should_stop_scan(should_stop):
                         break
-                    response = _send(method, action, _build_data(inputs, param, payload), timeout=6)
+                    response = _send(client, method, action, _build_data(inputs, param, payload), timeout=6)
                     checked += 1
                     if on_progress:
                         on_progress({"url": url, "form": form_idx + 1, "forms": len(forms), "param": param, "checked": checked})

@@ -1,11 +1,8 @@
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-from app.scanner.common import session_headers
+from app.scanner.http_client import safe_scanner_session
 
-session = requests.Session()
-session.headers.update(session_headers())
 
 
 def _select_value(select_tag):
@@ -18,11 +15,12 @@ def _select_value(select_tag):
     return ""
 
 
-def get_forms(url):
+def get_forms(url, client=None):
     forms = []
+    client = client or safe_scanner_session(timeout=5)
 
     try:
-        response = session.get(url, timeout=5, allow_redirects=True)
+        response = client.get(url, timeout=5, allow_redirects=True)
         soup = BeautifulSoup(response.text, "html.parser")
 
         for form in soup.find_all("form"):

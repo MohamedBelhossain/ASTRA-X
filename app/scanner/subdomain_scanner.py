@@ -1,27 +1,26 @@
-import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
 import requests
 
-from app.scanner.common import session_headers, should_stop_scan
+from app.scanner.common import should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import SUBDOMAINS, SUBDOMAIN_HIGH_RISK as HIGH_RISK
-
-session = requests.Session()
-session.headers.update(session_headers())
 
 
 def _check_subdomain(subdomain, domain, scheme):
     hostname = f"{subdomain}.{domain}"
     url = f"{scheme}://{hostname}"
+    client = safe_scanner_session(timeout=5)
 
     try:
-        ip = socket.gethostbyname(hostname)
-    except socket.gaierror:
+        target_info = client.validator.validate_target(url, verify_head=False)
+        ip = target_info["addresses"][0]
+    except ValueError:
         return None
 
     try:
-        response = session.get(url, timeout=5, allow_redirects=True)
+        response = client.get(url, timeout=5, allow_redirects=True)
         status = response.status_code
         title = _extract_title(response.text)
     except requests.exceptions.RequestException:

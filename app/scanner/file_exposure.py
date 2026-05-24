@@ -3,11 +3,9 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import FILE_FALSE_POSITIVE_KEYWORDS as KEYWORDS, SENSITIVE_PATHS
-
-session = requests.Session()
-session.headers.update(session_headers())
 
 
 def is_false_positive(response):
@@ -18,10 +16,11 @@ def is_false_positive(response):
 
 
 def _check_sensitive_path(base, path):
+    client = safe_scanner_session(timeout=3)
     url = urljoin(base, path)
 
     try:
-        response = session.get(url, timeout=3, allow_redirects=True)
+        response = client.get(url, timeout=3, allow_redirects=True)
     except requests.exceptions.RequestException as exc:
         print(f"[ERROR] {url} -> {exc}")
         return None

@@ -105,14 +105,14 @@ def _parse_nmap_xml(output):
     return open_ports
 
 
-def run_nmap(target_url, ports=COMMON_PORTS):
+def run_nmap(target_url, ports=COMMON_PORTS, resolved_ip=None):
     hostname = None
     ip = None
 
     try:
         validated_ports = validate_ports(ports)
         hostname = _target_hostname(target_url)
-        ip = socket.gethostbyname(hostname)
+        ip = resolved_ip or socket.gethostbyname(hostname)
 
         command = [
             "nmap",

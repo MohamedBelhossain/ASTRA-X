@@ -2,10 +2,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.scanner.common import session_headers, should_stop_scan
-
-session = requests.Session()
-session.headers.update(session_headers())
+from app.scanner.common import should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 
 SECURITY_HEADERS = {
     "strict-transport-security": {
@@ -95,6 +93,7 @@ def scan_security_headers(target_url, should_stop=None):
     if should_stop_scan(should_stop):
         return result
 
+    session = safe_scanner_session(timeout=8)
     try:
         response = session.get(target_url, timeout=8, allow_redirects=True)
     except requests.exceptions.RequestException as exc:

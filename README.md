@@ -60,6 +60,8 @@ Minimum required values:
 ```env
 SECRET_KEY=replace_with_a_random_secret
 MONGO_URI=mongodb://localhost:27017/webvuln
+MONGO_ROOT_USERNAME=webvuln_admin
+MONGO_ROOT_PASSWORD=replace_with_a_random_mongo_password
 ```
 
 To enable email verification and password reset, also configure:
@@ -77,6 +79,7 @@ Notes:
 
 - `SECRET_KEY` is required for login sessions and flash messages.
 - `MONGO_URI` points to your MongoDB instance.
+- `MONGO_ROOT_USERNAME` and `MONGO_ROOT_PASSWORD` are required by Docker Compose to start MongoDB with authentication.
 - `ALLOW_PRIVATE_TARGETS=false` blocks localhost/private-network targets by default to reduce SSRF risk.
 - Optional scan throttling and security knobs:
 
@@ -89,6 +92,7 @@ MIN_PASSWORD_LENGTH=10
 SESSION_COOKIE_SECURE=false
 SESSION_COOKIE_SAMESITE=Lax
 ALLOW_PRIVATE_TARGETS=false
+REVEAL_DISCOVERED_CREDENTIALS=false
 ```
 
 ## Local Development
@@ -126,6 +130,8 @@ Create `.env` from `.env.example` and edit it:
 ```env
 SECRET_KEY=replace_with_a_random_secret
 MONGO_URI=mongodb://localhost:27017/webvuln
+MONGO_ROOT_USERNAME=webvuln_admin
+MONGO_ROOT_PASSWORD=replace_with_a_random_mongo_password
 MAIL_SERVER=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USE_TLS=true
@@ -140,6 +146,7 @@ MIN_PASSWORD_LENGTH=10
 SESSION_COOKIE_SECURE=false
 SESSION_COOKIE_SAMESITE=Lax
 ALLOW_PRIVATE_TARGETS=false
+REVEAL_DISCOVERED_CREDENTIALS=false
 ```
 
 ### 5. Start MongoDB
@@ -173,6 +180,7 @@ docker run --rm -p 5000:5000 \
 ## Docker Compose
 
 This repo also includes `docker-compose.yml` with both the web app and MongoDB.
+Set `SECRET_KEY`, `MONGO_ROOT_USERNAME`, and `MONGO_ROOT_PASSWORD` in `.env` before starting.
 
 ```bash
 docker compose up --build
@@ -187,7 +195,7 @@ http://localhost:5000
 Default compose environment:
 
 - App: `http://localhost:5000`
-- MongoDB: `mongodb://mongo:27017/webvuln`
+- MongoDB is available only inside the Compose network and requires authentication.
 - Mail and scan-rate settings are loaded from `.env` when present
 
 ## App Flow

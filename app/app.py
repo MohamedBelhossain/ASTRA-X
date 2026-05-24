@@ -41,12 +41,36 @@ APP_DIR = os.path.dirname(__file__)
 ROOT_DIR = os.path.dirname(APP_DIR)
 ROOT_ENV_PATH = os.path.join(ROOT_DIR, ".env")
 APP_ENV_PATH = os.path.join(APP_DIR, ".env")
-load_dotenv(ROOT_ENV_PATH)
-load_dotenv(APP_ENV_PATH, override=False)
+if not bool_env(os.environ.get("RUNNING_IN_DOCKER"), default=False):
+    load_dotenv(ROOT_ENV_PATH)
+    load_dotenv(APP_ENV_PATH, override=False)
+
+
+def normalize_mongo_uri(uri, default_database="webvuln"):
+    parsed = urlparse(uri)
+    if parsed.scheme.startswith("mongodb") and parsed.netloc and parsed.path in {"", "/"}:
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        if parsed.username and "authSource" not in query:
+            query["authSource"] = "admin"
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                f"/{default_database}",
+                parsed.params,
+                urlencode(query),
+                parsed.fragment,
+            )
+        )
+    return uri
+
 
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY", "dev-secret-key-change-me"),
-    MONGO_URI=os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln"),
+    MONGO_URI=normalize_mongo_uri(
+        os.environ.get("MONGO_URI", "mongodb://localhost:27017/webvuln"),
+        os.environ.get("MONGO_DB_NAME", "webvuln"),
+    ),
     MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp.gmail.com"),
     MAIL_PORT=int(os.environ.get("MAIL_PORT", 587)),
     MAIL_USE_TLS=os.environ.get("MAIL_USE_TLS", "true").lower() == "true",
@@ -89,6 +113,7 @@ LFI_MAX_PARAMS = int(os.environ.get("LFI_MAX_PARAMS", "3"))
 LFI_MAX_PAYLOADS = int(os.environ.get("LFI_MAX_PAYLOADS", "6"))
 LFI_AGGRESSIVE = bool_env(os.environ.get("LFI_AGGRESSIVE"), default=False)
 ALLOW_PRIVATE_TARGETS = bool_env(os.environ.get("ALLOW_PRIVATE_TARGETS"), default=False)
+REVEAL_DISCOVERED_CREDENTIALS = bool_env(os.environ.get("REVEAL_DISCOVERED_CREDENTIALS"), default=False)
 scan_executor = ThreadPoolExecutor(max_workers=SCAN_WORKERS)
 scan_jobs = {}
 
@@ -107,8 +132,6 @@ def admin_required(view):
     @login_required
     def wrapped(*args, **kwargs):
         if not current_user.is_admin:
-            if request.path.startswith(("/start-scan", "/cancel-scan", "/stream", "/export")):
-                return jsonify({"error": "Admin access required."}), 403
             return render_template("error.html", message="Admin access required."), 403
         return view(*args, **kwargs)
 
@@ -269,14 +292,29 @@ def get_active_scan_count_for_user(user_id):
 
 
 def get_scan_quota_context(user_id):
-    quota = User.get_scan_quota_status(
-        user_id=user_id,
+    quota = RateLimitBucket.status(
+        namespace="scan_start",
+        key=str(user_id),
+        limit=SCAN_RATE_LIMIT_MAX,
         window_seconds=SCAN_RATE_LIMIT_WINDOW_SECONDS,
-        max_scans=SCAN_RATE_LIMIT_MAX,
     )
     quota["active_scans"] = get_active_scan_count_for_user(user_id)
     quota["max_active_scans"] = MAX_ACTIVE_SCANS_PER_USER
     return quota
+
+
+def consume_scan_quota(user_id):
+    status = RateLimitBucket.check_and_record(
+        namespace="scan_start",
+        key=str(user_id),
+        limit=SCAN_RATE_LIMIT_MAX,
+        window_seconds=SCAN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    return {
+        "allowed": status["allowed"],
+        "remaining": max(0, SCAN_RATE_LIMIT_MAX - status["count"]),
+        "retry_after": status.get("retry_after", 0),
+    }
 
 
 def should_stop(scan_id):
@@ -313,16 +351,29 @@ def scan_doc_for_user(scan_id, user_id, is_admin=False):
 
 
 def finding_request_data(category, finding):
+    payload = finding.get("payload")
+    if category == "bruteforce":
+        payload = f"{finding.get('username')} / {'********' if finding.get('password') else ''}"
     return {
         "method": finding.get("method", "GET"),
         "url": finding.get("login_url") or finding.get("url"),
         "param": finding.get("parameter") or finding.get("param") or "credentials",
-        "payload": finding.get("payload")
-        or (f"{finding.get('username')} / {finding.get('password')}" if category == "bruteforce" else None),
+        "payload": payload,
         "evidence": finding.get("evidence"),
         "confidence": finding.get("confidence"),
         "severity": finding.get("severity"),
     }
+
+
+def redact_discovered_credentials(bruteforce_result):
+    if REVEAL_DISCOVERED_CREDENTIALS:
+        return bruteforce_result
+    sanitized = dict(bruteforce_result or {})
+    sanitized["credentials_found"] = [
+        {**finding, "password": "********", "password_redacted": True}
+        for finding in sanitized.get("credentials_found", [])
+    ]
+    return sanitized
 
 
 def _has_query_params(url):
@@ -430,7 +481,7 @@ def run_scan(scan_id):
                 should_stop=lambda: should_stop(scan_id),
             )
             future_names[header_future] = "headers"
-            nmap_future = executor.submit(run_nmap, target)
+            nmap_future = executor.submit(run_nmap, target, resolved_ip=target_info["addresses"][0])
             future_names[nmap_future] = "nmap"
             crawl_future = executor.submit(
                 crawl,
@@ -600,6 +651,8 @@ def run_scan(scan_id):
         progress_by_item = {name: {} for name in progress_counts}
 
         def collect_one(category, finding, sink):
+            if category == "bruteforce" and not REVEAL_DISCOVERED_CREDENTIALS:
+                finding = {**finding, "password": "********", "password_redacted": True}
             with finding_lock:
                 signature = (
                     category,
@@ -755,6 +808,7 @@ def run_scan(scan_id):
             )
             raise_if_cancelled(scan_id)
 
+            bruteforce_result = redact_discovered_credentials(bruteforce_result)
             report["bruteforce_result"] = bruteforce_result
             credential_count = len(bruteforce_result.get("credentials_found", []))
             phase(scan_id, "brute", "done", credential_count)
@@ -931,11 +985,7 @@ def start_scan():
             }
         ), 429
 
-    quota_result = User.consume_scan_quota(
-        user_id=current_user.id,
-        window_seconds=SCAN_RATE_LIMIT_WINDOW_SECONDS,
-        max_scans=SCAN_RATE_LIMIT_MAX,
-    )
+    quota_result = consume_scan_quota(current_user.id)
     if not quota_result.get("allowed"):
         return jsonify(
             {
@@ -1087,4 +1137,9 @@ def export_json(scan_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000, threaded=True)
+    app.run(
+        debug=bool_env(os.environ.get("FLASK_DEBUG"), default=False),
+        host=os.environ.get("FLASK_RUN_HOST", "127.0.0.1"),
+        port=int(os.environ.get("FLASK_RUN_PORT", "5000")),
+        threaded=True,
+    )

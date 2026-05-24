@@ -387,6 +387,39 @@ class RateLimitBucket:
         }
 
     @classmethod
+    def status(cls, namespace, key, limit, window_seconds):
+        now = utcnow()
+        window_start = now - timedelta(seconds=window_seconds)
+        count = cls._col().count_documents(
+            {
+                "namespace": namespace,
+                "key": key,
+                "created_at": {"$gte": window_start},
+            }
+        )
+        oldest = cls._col().find_one(
+            {
+                "namespace": namespace,
+                "key": key,
+                "created_at": {"$gte": window_start},
+            },
+            sort=[("created_at", 1)],
+        )
+        reset_in = window_seconds
+        if oldest:
+            reset_in = max(
+                0,
+                int((oldest["created_at"] + timedelta(seconds=window_seconds) - now).total_seconds()),
+            )
+        return {
+            "limit": limit,
+            "used": min(count, limit),
+            "remaining": max(0, limit - count),
+            "window_seconds": window_seconds,
+            "reset_in": reset_in,
+        }
+
+    @classmethod
     def ensure_indexes(cls):
         cls._col().create_index("expires_at", expireAfterSeconds=0)
         cls._col().create_index([("namespace", 1), ("key", 1), ("created_at", -1)])
@@ -396,6 +429,7 @@ class ScanRecord:
     """Persistent scan metadata, event stream, and report data."""
 
     ACTIVE_STATUSES = {"queued", "running", "cancelling"}
+    MAX_EVENTS_PER_SCAN = 2000
 
     @classmethod
     def _col(cls):
@@ -496,7 +530,10 @@ class ScanRecord:
     @classmethod
     def append_event(cls, scan_id, event_type, data):
         event = {"type": event_type, "data": data, "created_at": utcnow()}
-        cls._col().update_one({"scan_id": scan_id}, {"$push": {"events": event}})
+        cls._col().update_one(
+            {"scan_id": scan_id},
+            {"$push": {"events": {"$each": [event], "$slice": -cls.MAX_EVENTS_PER_SCAN}}},
+        )
         return event
 
     @classmethod

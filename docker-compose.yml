@@ -2,21 +2,25 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}"
     volumes:
       - mongo_data:/data/db
-    ports:
-      - "27017:27017"
 
   web:
     build: .
     restart: unless-stopped
     ports:
       - "5000:5000"
-    env_file:
-      - .env
     environment:
-      MONGO_URI: "${DOCKER_MONGO_URI:-mongodb://mongo:27017/webvuln}"
-      SECRET_KEY: "${SECRET_KEY:-CHANGE-THIS-IN-PRODUCTION}"
+      RUNNING_IN_DOCKER: "true"
+      MONGO_URI: "${MONGO_URI:-${DOCKER_MONGO_URI:-mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/webvuln?authSource=admin}}"
+      MONGO_DB_NAME: "${MONGO_DB_NAME:-webvuln}"
+      SECRET_KEY: "${SECRET_KEY:?Set SECRET_KEY in .env before starting the app}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
       MAIL_SERVER: "${MAIL_SERVER:-smtp.gmail.com}"
       MAIL_PORT: "${MAIL_PORT:-587}"
       MAIL_USE_TLS: "${MAIL_USE_TLS:-true}"
@@ -27,6 +31,14 @@ services:
       SCAN_RATE_LIMIT_MAX: "${SCAN_RATE_LIMIT_MAX:-5}"
       SCAN_RATE_LIMIT_WINDOW_SECONDS: "${SCAN_RATE_LIMIT_WINDOW_SECONDS:-3600}"
       MAX_ACTIVE_SCANS_PER_USER: "${MAX_ACTIVE_SCANS_PER_USER:-1}"
+      SCAN_WORKERS: "${SCAN_WORKERS:-2}"
+      INJECTION_WORKERS: "${INJECTION_WORKERS:-12}"
+      ACTIVE_TEST_MAX_PAGES: "${ACTIVE_TEST_MAX_PAGES:-8}"
+      MIN_PASSWORD_LENGTH: "${MIN_PASSWORD_LENGTH:-10}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
+      SESSION_COOKIE_SAMESITE: "${SESSION_COOKIE_SAMESITE:-Lax}"
+      ALLOW_PRIVATE_TARGETS: "${ALLOW_PRIVATE_TARGETS:-false}"
+      REVEAL_DISCOVERED_CREDENTIALS: "${REVEAL_DISCOVERED_CREDENTIALS:-false}"
     depends_on:
       - mongo
 

@@ -24,6 +24,14 @@ class FakeResponse:
             raise RuntimeError("bad status")
 
 
+class FakeClient:
+    def __init__(self, response):
+        self.response = response
+
+    def get(self, *args, **kwargs):
+        return self.response
+
+
 class ScannerHelpersTest(unittest.TestCase):
     def test_crawler_normalize_sorts_query_and_removes_fragment(self):
         normalized = normalize("https://example.com/search?b=2&a=1#frag")
@@ -43,8 +51,8 @@ class ScannerHelpersTest(unittest.TestCase):
         """
 
         with patch(
-            "app.scanner.cms_scanner.session.get",
-            return_value=FakeResponse(html, headers={"X-Powered-By": "PHP"}),
+            "app.scanner.cms_scanner.safe_scanner_session",
+            return_value=FakeClient(FakeResponse(html, headers={"X-Powered-By": "PHP"})),
         ):
             result = detect_cms("https://example.test/")
 
@@ -79,7 +87,7 @@ class ScannerHelpersTest(unittest.TestCase):
         }
 
         with patch(
-            "app.scanner.cms_scanner.session.get",
+            "app.scanner.cms_scanner.nvd_session.get",
             return_value=FakeResponse(payload=payload),
         ):
             cves = lookup_cves("WordPress", "6.4.3")
@@ -92,8 +100,8 @@ class ScannerHelpersTest(unittest.TestCase):
 
     def test_security_header_scanner_reports_missing_headers(self):
         with patch(
-            "app.scanner.header_scanner.session.get",
-            return_value=FakeResponse("ok", headers={"content-type": "text/html"}),
+            "app.scanner.header_scanner.safe_scanner_session",
+            return_value=FakeClient(FakeResponse("ok", headers={"content-type": "text/html"})),
         ):
             result = scan_security_headers("https://example.test/")
 

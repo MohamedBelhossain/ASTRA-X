@@ -5,12 +5,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 MAX_CVE_RESULTS = 8
 
-session = requests.Session()
-session.headers.update(session_headers())
+nvd_session = requests.Session()
+nvd_session.headers.update(session_headers())
 
 
 CMS_SIGNATURES = {
@@ -119,6 +120,7 @@ def detect_cms(base_url, should_stop=None):
         }
 
     root = _base_url(base_url)
+    client = safe_scanner_session(timeout=6)
     checked_urls = [root, urljoin(root, "/")]
     html_parts = []
     headers_text = ""
@@ -128,7 +130,7 @@ def detect_cms(base_url, should_stop=None):
         if should_stop_scan(should_stop):
             break
         try:
-            response = session.get(url, timeout=6, allow_redirects=True)
+            response = client.get(url, timeout=6, allow_redirects=True)
             headers_text += " ".join(f"{key}: {value}" for key, value in response.headers.items())
             if response.text:
                 html_parts.append(response.text[:250000])
@@ -218,7 +220,7 @@ def lookup_cves(cms_name, version=None, should_stop=None):
     }
 
     try:
-        response = session.get(NVD_API_URL, params=params, timeout=8)
+        response = nvd_session.get(NVD_API_URL, params=params, timeout=8)
         response.raise_for_status()
         payload = response.json()
     except (ValueError, requests.exceptions.RequestException):

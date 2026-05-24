@@ -37,8 +37,8 @@
       <form action="{{ url_for('auth.admin_login') }}" method="POST" class="form-stack">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-row">
-          <label>Admin Email</label>
-          <input type="email" name="email" placeholder="admin@example.com" required>
+          <label>Admin Email or Username</label>
+          <input type="text" name="email" placeholder="admin@example.com" required>
         </div>
         <div class="field-row">
           <label>Password</label>

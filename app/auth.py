@@ -37,6 +37,15 @@ def normalize_email(email):
     return email.strip().lower()
 
 
+def find_user_by_login_identifier(identifier):
+    identifier = identifier.strip()
+    if not identifier:
+        return None
+    if "@" in identifier:
+        return User.find_by_email(normalize_email(identifier))
+    return User.find_by_username(identifier)
+
+
 def sanitize_code(code):
     return "".join(ch for ch in code if ch.isdigit())
 
@@ -461,19 +470,19 @@ def admin_login():
         return redirect(url_for("admin_dashboard"))
 
     if request.method == "POST":
-        email = normalize_email(request.form.get("email", ""))
+        login_identifier = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
 
         if not _enforce_rate_limit(
             "admin_login",
-            email or "anonymous",
+            login_identifier.lower() or "anonymous",
             limit=6,
             window_seconds=900,
             message="Too many admin login attempts. Try again in about {retry_after} seconds.",
         ):
             return redirect(url_for("auth.admin_login"))
 
-        user = User.find_by_email(email)
+        user = find_user_by_login_identifier(login_identifier)
         if (
             not user
             or not user.is_admin
@@ -725,7 +734,7 @@ def reset_password():
 
         user = User.find_by_email(email)
         if not user:
-            flash("No account was found for that email.", "danger")
+            flash("Invalid or expired reset code.", "danger")
             return render_template("reset_password.html", form_data=form_data)
 
         if password != confirm:

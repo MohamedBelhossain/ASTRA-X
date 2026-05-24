@@ -1,12 +1,9 @@
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from app.form_parser import get_forms
-from app.scanner.common import session_headers, should_stop_scan
-
-session = requests.Session()
-session.headers.update(session_headers())
+from app.scanner.common import should_stop_scan
+from app.scanner.http_client import safe_scanner_session
 
 STATIC_SUFFIXES = (".jpg", ".jpeg", ".png", ".css", ".js", ".pdf", ".ico", ".svg", ".woff", ".woff2")
 BLOCKING_STATUS_CODES = {401, 403, 406, 415, 429, 503}
@@ -70,9 +67,9 @@ def _flag_anti_bot(diagnostics, reason):
         diagnostics["anti_bot_reasons"].append(reason)
 
 
-def _request_page(url, diagnostics, timeout=12):
+def _request_page(client, url, diagnostics, timeout=12):
     try:
-        response = session.get(url, timeout=timeout, allow_redirects=True)
+        response = client.get(url, timeout=timeout, allow_redirects=True)
     except requests.exceptions.Timeout:
         diagnostics["timeout_urls"].append(url)
         _flag_anti_bot(diagnostics, "Timed out while fetching crawl target")
@@ -95,10 +92,10 @@ def _request_page(url, diagnostics, timeout=12):
     return response
 
 
-def _discover_sitemap_urls(base_url, diagnostics):
+def _discover_sitemap_urls(client, base_url, diagnostics):
     urls = set()
     sitemap_url = urljoin(base_url, "/sitemap.xml")
-    response = _request_page(sitemap_url, diagnostics, timeout=8)
+    response = _request_page(client, sitemap_url, diagnostics, timeout=8)
     if not response or response.status_code != 200 or "<urlset" not in response.text:
         return urls
 
@@ -111,10 +108,11 @@ def _discover_sitemap_urls(base_url, diagnostics):
     return urls
 
 
-def get_links(url, diagnostics=None):
+def get_links(url, diagnostics=None, client=None):
     links = set()
     diagnostics = diagnostics or _new_diagnostics()
-    response = _request_page(url, diagnostics)
+    client = client or safe_scanner_session(timeout=12)
+    response = _request_page(client, url, diagnostics)
     if not response:
         return links, diagnostics
 
@@ -136,7 +134,7 @@ def get_links(url, diagnostics=None):
         if _same_host(full_url, response.url):
             links.add(full_url)
 
-    for form in get_forms(response.url):
+    for form in get_forms(response.url, client=client):
         action = normalize(form.get("action") or response.url)
         if _same_host(action, response.url):
             links.add(action)
@@ -149,11 +147,12 @@ def _is_static_url(url):
 
 
 def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False, on_page=None):
+    client = safe_scanner_session(timeout=12)
     visited_urls = set()
     to_visit = [normalize(target)]
     discovered = set()
     diagnostics = _new_diagnostics()
-    to_visit.extend(sorted(_discover_sitemap_urls(target, diagnostics)))
+    to_visit.extend(sorted(_discover_sitemap_urls(client, target, diagnostics)))
 
     while to_visit and len(discovered) < max_pages:
         if should_stop_scan(should_stop):
@@ -169,7 +168,7 @@ def crawl(target, max_pages=40, should_stop=None, return_diagnostics=False, on_p
         if on_page and not _is_static_url(url):
             on_page(url, page_count)
 
-        links, diagnostics = get_links(url, diagnostics=diagnostics)
+        links, diagnostics = get_links(url, diagnostics=diagnostics, client=client)
         for link in sorted(links):
             if should_stop_scan(should_stop):
                 break
