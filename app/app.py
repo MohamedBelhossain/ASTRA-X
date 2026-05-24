@@ -8,9 +8,8 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-import requests as req
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, stream_with_context, url_for
 from flask_login import LoginManager, current_user, login_required
 from weasyprint import HTML
 
@@ -27,9 +26,14 @@ from app.scanner.nmap import run_nmap
 from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.subdomain_scanner import scan_subdomains
 from app.scanner.xss_scanner import scan_xss
-from app.scanner.common import session_headers
 from app.reporting import SCAN_USAGE_NOTICE, build_risk_summary, empty_risk_summary
-from app.security import bool_env, register_template_helpers, resolve_public_target
+from app.security import (
+    SSRFValidator,
+    TargetValidationError,
+    bool_env,
+    register_template_helpers,
+    resolve_public_target,
+)
 
 app = Flask(__name__)
 
@@ -285,51 +289,27 @@ def raise_if_cancelled(scan_id):
 
 
 def user_owns_scan(scan_id):
-    if current_user.is_admin:
+    if getattr(current_user, "is_admin", False):
         return bool(ScanRecord.find_by_scan_id(scan_id))
     return bool(ScanRecord.find_owned(scan_id, current_user.id))
 
 
 def scan_doc_for_current_user(scan_id):
-    if current_user.is_admin:
+    if getattr(current_user, "is_admin", False):
         return ScanRecord.find_by_scan_id(scan_id)
     return ScanRecord.find_owned(scan_id, current_user.id)
 
 
 def report_for_current_user(scan_id):
-    if current_user.is_admin:
+    if getattr(current_user, "is_admin", False):
         return ScanRecord.serializable_report(scan_id)
     return ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
 
 
-def validate_target_reachable(target):
-    headers = session_headers()
-    last_exc = None
-
-    try:
-        return req.head(
-            target,
-            timeout=5,
-            allow_redirects=True,
-            headers=headers,
-        )
-    except req.exceptions.RequestException as exc:
-        last_exc = exc
-
-    try:
-        response = req.get(
-            target,
-            timeout=12,
-            allow_redirects=True,
-            headers=headers,
-            stream=True,
-        )
-        response.close()
-        return response
-    except req.exceptions.RequestException as exc:
-        last_exc = exc
-
-    raise last_exc or req.exceptions.RequestException("Target validation failed.")
+def scan_doc_for_user(scan_id, user_id, is_admin=False):
+    if is_admin:
+        return ScanRecord.find_by_scan_id(scan_id)
+    return ScanRecord.find_owned(scan_id, user_id)
 
 
 def finding_request_data(category, finding):
@@ -404,6 +384,17 @@ def run_scan(scan_id):
 
     try:
         ScanRecord.mark_running(scan_id)
+        ssrf_validator = SSRFValidator(allow_private=ALLOW_PRIVATE_TARGETS)
+        target_info = ssrf_validator.verify_before_scan(
+            target,
+            expected_addresses=doc.get("resolved_ips", []),
+        )
+        log(
+            scan_id,
+            f"SSRF guard verified {target_info['hostname']} still resolves to "
+            f"{', '.join(target_info['addresses'])}.",
+        )
+
         phase(scan_id, "cms", "running")
         phase(scan_id, "headers", "running")
         phase(scan_id, "nmap", "running")
@@ -848,6 +839,21 @@ def run_scan(scan_id):
     except ScanCancelled:
         log(scan_id, "Scan cancelled by the user.", "warn")
         finalize_scan(scan_id, "cancelled", report)
+    except TargetValidationError as exc:
+        app.logger.warning(
+            "scan_blocked_by_ssrf_guard",
+            extra={
+                "security_event": {
+                    "event": "blocked_request",
+                    "scan_id": scan_id,
+                    "target": target,
+                    "reason": str(exc),
+                }
+            },
+        )
+        log(scan_id, f"Scan blocked by SSRF protection: {exc}", "error")
+        finalize_scan(scan_id, "failed", report, last_error=str(exc))
+        push(scan_id, "error", {"msg": str(exc)})
     except Exception as exc:
         app.logger.exception("Scan %s failed", scan_id)
         log(scan_id, f"Scan failed: {exc}", "error")
@@ -869,7 +875,7 @@ def home():
 
 
 @app.route("/dashboard", methods=["GET"])
-@admin_required
+@login_required
 def index():
     return render_template(
         "index.html",
@@ -899,7 +905,7 @@ def admin_dashboard():
 
 
 @app.route("/start-scan", methods=["POST"])
-@admin_required
+@login_required
 def start_scan():
     target = request.form.get("url", "").strip()
     scan_mode = request.form.get("scan_mode", "deep").strip().lower()
@@ -908,28 +914,13 @@ def start_scan():
         return jsonify({"error": "Invalid scan mode."}), 400
 
     try:
-        target_info = resolve_public_target(target, allow_private=ALLOW_PRIVATE_TARGETS)
+        target_info = resolve_public_target(
+            target,
+            allow_private=ALLOW_PRIVATE_TARGETS,
+            verify_head=True,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-
-    preflight_warning = None
-    try:
-        validate_target_reachable(target_info["target"])
-    except req.exceptions.ConnectionError:
-        preflight_warning = (
-            "Initial connectivity probe could not establish a stable connection. "
-            "The scan will still be attempted because some protected sites block preflight checks."
-        )
-    except req.exceptions.Timeout:
-        preflight_warning = (
-            "Initial connectivity probe timed out. "
-            "The scan will still be attempted because some targets respond slowly or challenge automation."
-        )
-    except req.exceptions.RequestException as exc:
-        preflight_warning = (
-            f"Initial connectivity probe returned a non-fatal validation warning: {exc}. "
-            "Continuing with the scan."
-        )
 
     active_scans = get_active_scan_count_for_user(current_user.id)
     if active_scans >= MAX_ACTIVE_SCANS_PER_USER:
@@ -965,8 +956,6 @@ def start_scan():
     )
     log(scan_id, f"Scan queued for {target_info['target']} ({', '.join(target_info['addresses'])}).")
     log(scan_id, SCAN_USAGE_NOTICE, "warn")
-    if preflight_warning:
-        log(scan_id, preflight_warning, "warn")
 
     future = scan_executor.submit(run_scan, scan_id)
     scan_jobs[scan_id] = future
@@ -982,7 +971,7 @@ def start_scan():
 
 
 @app.route("/cancel-scan/<scan_id>", methods=["POST"])
-@admin_required
+@login_required
 def cancel_scan(scan_id):
     if not user_owns_scan(scan_id):
         return jsonify({"error": "Scan not found."}), 404
@@ -1007,12 +996,16 @@ def cancel_scan(scan_id):
 
 
 @app.route("/stream/<scan_id>")
-@admin_required
+@login_required
 def stream(scan_id):
+    user_id = current_user.id
+    is_admin = current_user.is_admin
+
+    @stream_with_context
     def generate():
         cursor = 0
         while True:
-            doc = scan_doc_for_current_user(scan_id)
+            doc = scan_doc_for_user(scan_id, user_id, is_admin=is_admin)
             if not doc:
                 yield f"data: {json.dumps({'type': 'error', 'data': {'msg': 'Scan not found.'}})}\n\n"
                 return
@@ -1037,7 +1030,7 @@ def stream(scan_id):
 
 
 @app.route("/report/<scan_id>")
-@admin_required
+@login_required
 def report(scan_id):
     data = report_for_current_user(scan_id)
     if not data:
@@ -1051,7 +1044,7 @@ def report(scan_id):
 
 
 @app.route("/download/<scan_id>")
-@admin_required
+@login_required
 def download(scan_id):
     data = report_for_current_user(scan_id)
     if not data:
@@ -1085,7 +1078,7 @@ def download(scan_id):
 
 
 @app.route("/export/<scan_id>.json")
-@admin_required
+@login_required
 def export_json(scan_id):
     data = report_for_current_user(scan_id)
     if not data:

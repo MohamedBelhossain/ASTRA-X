@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.security import code_matches, hash_code, normalize_target, resolve_public_target
+from app.security import SSRFValidator, code_matches, hash_code, normalize_target, resolve_public_target
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -34,6 +34,51 @@ class SecurityHelpersTest(unittest.TestCase):
         resolved = resolve_public_target("https://example.com")
         self.assertEqual(resolved["hostname"], "example.com")
         self.assertEqual(resolved["addresses"], ["93.184.216.34"])
+
+    @patch("app.security.socket.getaddrinfo")
+    def test_resolve_public_target_blocks_dns_rebinding(self, mock_getaddrinfo):
+        mock_getaddrinfo.side_effect = [
+            [(2, 1, 6, "", ("93.184.216.34", 0))],
+            [(2, 1, 6, "", ("127.0.0.1", 0))],
+            [(2, 1, 6, "", ("93.184.216.34", 0))],
+        ]
+        with self.assertRaisesRegex(ValueError, "DNS rebinding"):
+            resolve_public_target("https://rebind.example")
+
+    def test_resolve_public_target_blocks_suspicious_port(self):
+        with self.assertRaisesRegex(ValueError, "Port 8080"):
+            resolve_public_target("https://example.com:8080")
+
+    @patch("app.security.requests.head")
+    @patch("app.security.socket.getaddrinfo")
+    def test_head_verification_uses_timeout_without_redirects(self, mock_getaddrinfo, mock_head):
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("93.184.216.34", 0)),
+        ]
+        mock_head.return_value.status_code = 200
+        mock_head.return_value.headers = {}
+
+        resolved = resolve_public_target("https://head.example", verify_head=True)
+
+        self.assertEqual(resolved["addresses"], ["93.184.216.34"])
+        mock_head.assert_called_once_with(
+            "https://head.example",
+            timeout=5,
+            allow_redirects=False,
+        )
+
+    @patch("app.security.socket.getaddrinfo")
+    def test_verify_before_scan_blocks_cached_ip_mismatch(self, mock_getaddrinfo):
+        validator = SSRFValidator()
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("93.184.216.35", 0)),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "DNS rebinding"):
+            validator.verify_before_scan(
+                "https://queued.example",
+                expected_addresses=["93.184.216.34"],
+            )
 
 
 if __name__ == "__main__":

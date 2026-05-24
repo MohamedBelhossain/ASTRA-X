@@ -431,13 +431,11 @@
 
         <div class="connect-block">
           <div class="connect-label">// Get Started</div>
-          <div class="connect-desc">Scanner access is restricted to administrator accounts. Regular accounts can manage profile information but cannot launch security scans.</div>
+          <div class="connect-desc">Sign in to launch authorized web security scans, review findings, and manage your scan history.</div>
           <div class="actions">
-            {% if logged_in and current_user.is_admin %}
+            {% if logged_in %}
               <a href="{{ url_for('index') }}" class="btn-primary">⬡ Connect &amp; Scan</a>
-              <a href="{{ url_for('admin_dashboard') }}" class="btn-secondary">Admin</a>
-            {% elif logged_in %}
-              <a href="{{ url_for('auth.profile') }}" class="btn-primary">Account Profile</a>
+              <a href="{{ url_for('auth.profile') }}" class="btn-secondary">Account Profile</a>
               <form action="{{ url_for('auth.logout') }}" method="POST" style="display:inline-flex;">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-secondary" style="background:none;">Logout</button>
