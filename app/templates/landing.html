@@ -438,13 +438,12 @@
               <a href="{{ url_for('admin_dashboard') }}" class="btn-secondary">Admin</a>
             {% elif logged_in %}
               <a href="{{ url_for('auth.profile') }}" class="btn-primary">Account Profile</a>
-              <a href="{{ url_for('auth.admin_login') }}" class="btn-secondary">Admin Login</a>
               <form action="{{ url_for('auth.logout') }}" method="POST" style="display:inline-flex;">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-secondary" style="background:none;">Logout</button>
               </form>
             {% else %}
-              <a href="{{ url_for('auth.admin_login') }}" class="btn-primary">⬡ Admin Scan Login</a>
+              <a href="{{ url_for('auth.login') }}" class="btn-primary">Login</a>
               <a href="{{ url_for('auth.register') }}" class="btn-secondary">Register</a>
             {% endif %}
           </div>

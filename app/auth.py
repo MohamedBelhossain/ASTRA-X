@@ -226,7 +226,7 @@ def _set_pending_email_after_delivery(user_id, email):
 @auth.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("index" if current_user.is_admin else "auth.profile"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -421,7 +421,7 @@ def resend_verification_code():
 @auth.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("index" if current_user.is_admin else "auth.profile"))
 
     if request.method == "POST":
         email = normalize_email(request.form.get("email", ""))
@@ -450,7 +450,7 @@ def login():
             return redirect(url_for("auth.login"))
 
         login_user(user)
-        return redirect(url_for("index"))
+        return redirect(url_for("auth.profile"))
 
     return render_template("login.html")
 
