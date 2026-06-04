@@ -1,8 +1,10 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from app.scanner.common import response_excerpt
-from app.scanner.crawler import normalize
+from app.scanner.crawler import get_links, normalize
 from app.scanner.cms_scanner import detect_cms, lookup_cves
 from app.scanner.header_scanner import scan_security_headers
 from app.reporting import build_risk_summary
@@ -32,10 +34,22 @@ class FakeClient:
         return self.response
 
 
+class TimeoutClient:
+    def get(self, *args, **kwargs):
+        raise requests.exceptions.Timeout("slow target")
+
+
 class ScannerHelpersTest(unittest.TestCase):
     def test_crawler_normalize_sorts_query_and_removes_fragment(self):
         normalized = normalize("https://example.com/search?b=2&a=1#frag")
         self.assertEqual(normalized, "https://example.com/search?a=1&b=2")
+
+    def test_crawler_records_timeout_diagnostics(self):
+        links, diagnostics = get_links("https://example.test/", client=TimeoutClient())
+
+        self.assertEqual(links, set())
+        self.assertEqual(diagnostics["timeout_urls"], ["https://example.test/"])
+        self.assertTrue(diagnostics["anti_bot_detected"])
 
     def test_response_excerpt_centers_on_needle(self):
         excerpt = response_excerpt("prefix matched error marker suffix", "error")

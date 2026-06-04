@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+import requests
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from app.form_parser import get_forms
