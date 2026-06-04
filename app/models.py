@@ -152,6 +152,19 @@ class User(UserMixin):
         return [serialize_document(doc) for doc in cursor]
 
     @classmethod
+    def list_by_ids(cls, user_ids):
+        object_ids = []
+        for user_id in user_ids:
+            try:
+                object_ids.append(ObjectId(user_id))
+            except Exception:
+                continue
+        if not object_ids:
+            return []
+        cursor = cls._col().find({"_id": {"$in": object_ids}})
+        return [serialize_document(doc) for doc in cursor]
+
+    @classmethod
     def consume_scan_quota(cls, user_id, window_seconds, max_scans, now=None):
         now = float(now or time.time())
         window_start = now - window_seconds

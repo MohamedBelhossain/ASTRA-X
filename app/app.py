@@ -3,6 +3,7 @@ import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from threading import Lock
@@ -352,6 +353,177 @@ def scan_doc_for_user(scan_id, user_id, is_admin=False):
     if is_admin:
         return ScanRecord.find_by_scan_id(scan_id)
     return ScanRecord.find_owned(scan_id, user_id)
+
+
+def _admin_user_map(scans):
+    owner_ids = {str(scan.get("owner_id")) for scan in scans if scan.get("owner_id")}
+    users = User.list_by_ids(owner_ids)
+    return {str(user.get("_id")): user for user in users}
+
+
+def _report_finding_counts(report):
+    report = report or {}
+    bruteforce = report.get("bruteforce_result") or {}
+    header = report.get("header_result") or {}
+    cms = report.get("cms_result") or {}
+    counts = {
+        "sqli": len(report.get("vulnerabilities") or []),
+        "xss": len(report.get("xss_vulnerabilities") or []),
+        "lfi": len(report.get("lfi_vulnerabilities") or []),
+        "files": len(report.get("file_findings") or []),
+        "headers": len(header.get("findings") or []),
+        "cves": len(cms.get("cves") or []),
+        "credentials": len(bruteforce.get("credentials_found") or []),
+    }
+    counts["total"] = sum(counts.values())
+    return counts
+
+
+def _risk_level_from_report(report):
+    risk = (report or {}).get("risk_summary") or {}
+    risk_level = (risk.get("risk_level") or "none").lower()
+    if risk_level != "none":
+        return risk_level
+
+    counts = _report_finding_counts(report)
+    if counts["credentials"] or counts["lfi"]:
+        return "critical"
+    if counts["sqli"] or counts["xss"] or counts["files"] or counts["cves"]:
+        return "high"
+    if counts["headers"]:
+        return "medium"
+    return "none"
+
+
+def _coerce_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _scan_runtime_label(scan):
+    started = _coerce_datetime(scan.get("started_at")) or _coerce_datetime(scan.get("created_at"))
+    finished = _coerce_datetime(scan.get("finished_at"))
+    if not started:
+        return "—"
+    end = finished or datetime.utcnow()
+    try:
+        seconds = max(0, int((end - started).total_seconds()))
+    except Exception:
+        return "—"
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def _last_event_summary(scan):
+    events = scan.get("events") or []
+    for event in reversed(events):
+        data = event.get("data") or {}
+        message = data.get("msg") or data.get("message")
+        if message:
+            return {
+                "type": event.get("type", "event"),
+                "message": message,
+                "level": data.get("level", "info"),
+            }
+    if scan.get("last_error"):
+        return {"type": "error", "message": scan["last_error"], "level": "error"}
+    return {"type": "status", "message": scan.get("status", "unknown"), "level": "info"}
+
+
+def _admin_scan_row(scan, users_by_id):
+    report = scan.get("report") or {}
+    owner_id = str(scan.get("owner_id") or "")
+    user = users_by_id.get(owner_id, {})
+    counts = _report_finding_counts(report)
+    return {
+        "scan_id": scan.get("scan_id"),
+        "target_url": scan.get("target_url"),
+        "target_host": scan.get("target_host"),
+        "scan_mode": scan.get("scan_mode", "deep"),
+        "status": scan.get("status", "unknown"),
+        "risk_level": _risk_level_from_report(report),
+        "finding_counts": counts,
+        "runtime": _scan_runtime_label(scan),
+        "last_event": _last_event_summary(scan),
+        "owner": {
+            "id": owner_id,
+            "username": user.get("username") or "Unknown",
+            "email": user.get("email") or "Unknown",
+        },
+        "created_at": serialize_document(scan.get("created_at")),
+        "last_error": scan.get("last_error"),
+        "is_active": scan.get("status") in ScanRecord.ACTIVE_STATUSES,
+    }
+
+
+def _admin_triage_item(scan, users_by_id):
+    row = _admin_scan_row(scan, users_by_id)
+    report = scan.get("report") or {}
+    counts = row["finding_counts"]
+    risk = row["risk_level"]
+    status = row["status"]
+    reasons = []
+    score = 0
+
+    if status == "failed":
+        score += 80
+        reasons.append("Scan failed")
+    if row["is_active"]:
+        score += 45
+        reasons.append("Active scan")
+    if risk == "critical":
+        score += 100
+        reasons.append("Critical risk")
+    elif risk == "high":
+        score += 70
+        reasons.append("High risk")
+    elif risk == "medium":
+        score += 35
+        reasons.append("Medium risk")
+    if counts["credentials"]:
+        score += 80
+        reasons.append("Credentials found")
+    if counts["lfi"]:
+        score += 60
+        reasons.append("LFI confirmed")
+    if counts["total"] >= 5:
+        score += 25
+        reasons.append(f"{counts['total']} findings")
+    if (report.get("crawl_diagnostics") or {}).get("anti_bot_detected"):
+        score += 20
+        reasons.append("WAF / anti-bot signals")
+    if scan.get("last_error") and status != "failed":
+        score += 15
+        reasons.append("Has error detail")
+
+    if score >= 100:
+        priority = "critical"
+    elif score >= 70:
+        priority = "high"
+    elif score >= 35:
+        priority = "medium"
+    else:
+        priority = "low"
+
+    row.update(
+        {
+            "priority": priority,
+            "priority_score": score,
+            "reasons": reasons[:4] or ["Monitor"],
+        }
+    )
+    return row
 
 
 def finding_request_data(category, finding):
@@ -948,6 +1120,14 @@ def index():
 @admin_required
 def admin_dashboard():
     scan_statuses = ScanRecord.count_by_status()
+    recent_scan_docs = ScanRecord.list_recent(limit=40)
+    users_by_id = _admin_user_map(recent_scan_docs)
+    triage_queue = sorted(
+        (_admin_triage_item(scan, users_by_id) for scan in recent_scan_docs),
+        key=lambda item: item["priority_score"],
+        reverse=True,
+    )
+    recent_scan_rows = [_admin_scan_row(scan, users_by_id) for scan in recent_scan_docs[:12]]
     return render_template(
         "admin.html",
         stats={
@@ -957,9 +1137,12 @@ def admin_dashboard():
             "active_scans": sum(scan_statuses.get(status, 0) for status in ScanRecord.ACTIVE_STATUSES),
             "completed_scans": scan_statuses.get("completed", 0),
             "failed_scans": scan_statuses.get("failed", 0),
+            "critical_queue": len([item for item in triage_queue if item["priority"] == "critical"]),
+            "high_queue": len([item for item in triage_queue if item["priority"] == "high"]),
         },
         recent_users=User.list_recent(limit=8),
-        recent_scans=ScanRecord.list_recent(limit=10),
+        triage_queue=triage_queue[:12],
+        recent_scans=recent_scan_rows,
     )
 
 
