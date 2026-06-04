@@ -1,105 +1,94 @@
 # WebVulnScan
 
-WebVulnScan is a Flask-based web vulnerability scanning dashboard with authentication, live scan streaming, report generation, PDF export, and MongoDB-backed users.
+WebVulnScan is a Flask-based web vulnerability scanning dashboard for authorized security testing. It combines crawling, vulnerability checks, live scan progress, persistent reports, and an admin triage console backed by MongoDB.
 
-## Features
+The project focuses on making scan results understandable, not just detectable. Findings include a **Proof Assistant** panel with evidence, impact, false-positive checks, safe reproduction steps, and fix guidance.
 
-- User registration and login with `flask-login`
-- CSRF protection, auth throttling, and safer session cookie defaults
-- Email verification and password reset with `Flask-Mail`
-- Public landing page at `/`
-- Live scan progress via server-sent events
-- Durable Mongo-backed scan jobs, history, cancellation, and JSON export
-- Port scanning with `python-nmap`
-- Web crawling and form discovery
-- SQL injection, XSS, LFI, and brute-force checks
-- Sensitive file exposure checks
-- Subdomain enumeration
-- Per-user scan quotas and single active-scan enforcement
-- HTML report view and PDF download
-- MongoDB-backed users, reset tokens, rate-limit buckets, and scan storage
+## Highlights
+
+- Authenticated dashboard with registration, login, email verification, password reset, and profile management
+- Live scan streaming with MongoDB-backed scan history, cancellation, JSON export, and PDF reports
+- Web crawler with form discovery, sitemap support, diagnostics, and anti-bot/WAF signals
+- Security checks for SQL injection, XSS, LFI/path traversal, brute-force exposure, sensitive files, subdomains, CMS/CVE signals, security headers, and open ports
+- Proof Assistant for clearer vulnerability evidence and remediation guidance
+- Admin Risk Triage Console for prioritizing critical/high-risk scans, failed scans, active scans, and noisy targets
+- SSRF protections, DNS rebinding checks, CSRF protection, auth throttling, scan quotas, and safer cookie defaults
 
 ## Tech Stack
 
-- Python 3.12
-- Flask
-- MongoDB
-- Flask-PyMongo
-- Flask-Login
-- Flask-Bcrypt
-- Flask-Mail
-- WeasyPrint
-- Requests
-- BeautifulSoup
+- Python 3.12, Flask, Flask-Login, Flask-Bcrypt, Flask-Mail
+- MongoDB, Flask-PyMongo
+- Requests, BeautifulSoup, lxml
 - python-nmap
+- WeasyPrint
+- Docker / Docker Compose
 
 ## Project Structure
 
 ```text
 app/
-  app.py                Main Flask app and routes
-  auth.py               Authentication routes
-  models.py             Mongo-backed user and reset-token models
-  templates/            Landing, auth, dashboard, report, error pages
-  static/               Shared CSS
-  scanner/              Scanning modules
+  app.py             Main Flask app, routes, scan orchestration
+  auth.py            Authentication and account routes
+  models.py          MongoDB models for users, scans, tokens, rate limits
+  reporting.py       Risk summaries and Proof Assistant enrichment
+  scanner/           Crawler and scanner modules
+  templates/         Dashboard, report, admin, auth, landing pages
+  static/            CSS assets
+tests/               Security and scanner helper tests
 Dockerfile
 docker-compose.yml
 requirements.txt
-README.md
-.env                   Local environment variables
-.env.example           Example environment variables
+.env.example
 ```
 
-## Environment Variables
+## Configuration
 
-The app loads environment variables from `.env` at the project root.
+Create `.env` from `.env.example` and change the secrets before running.
 
-Minimum required values:
+Minimum useful configuration:
 
 ```env
 SECRET_KEY=replace_with_a_random_secret
 MONGO_URI=mongodb://localhost:27017/webvuln
 MONGO_ROOT_USERNAME=webvuln_admin
 MONGO_ROOT_PASSWORD=replace_with_a_random_mongo_password
-```
 
-To enable email verification and password reset, also configure:
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=change_this_admin_password
 
-```env
-MAIL_SERVER=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USE_TLS=true
-MAIL_USERNAME=your_email@gmail.com
-MAIL_PASSWORD=your_16char_app_password
-MAIL_DEFAULT_SENDER=your_email@gmail.com
-```
-
-Notes:
-
-- `SECRET_KEY` is required for login sessions and flash messages.
-- `MONGO_URI` points to your MongoDB instance.
-- `MONGO_ROOT_USERNAME` and `MONGO_ROOT_PASSWORD` are required by Docker Compose to start MongoDB with authentication.
-- `ALLOW_PRIVATE_TARGETS=false` blocks localhost/private-network targets by default to reduce SSRF risk.
-- Optional scan throttling and security knobs:
-
-```env
-SCAN_RATE_LIMIT_MAX=5
-SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
-MAX_ACTIVE_SCANS_PER_USER=1
-SCAN_WORKERS=2
-MIN_PASSWORD_LENGTH=10
-SESSION_COOKIE_SECURE=false
-SESSION_COOKIE_SAMESITE=Lax
+MAIL_CONSOLE_FALLBACK=true
 ALLOW_PRIVATE_TARGETS=false
 REVEAL_DISCOVERED_CREDENTIALS=false
 ```
 
-## Local Development
+Important options:
 
-### 1. Install system dependencies
+- `ALLOW_PRIVATE_TARGETS=false` blocks localhost/private-network scan targets by default.
+- `REVEAL_DISCOVERED_CREDENTIALS=false` redacts discovered passwords in reports.
+- `SCAN_RATE_LIMIT_MAX`, `SCAN_RATE_LIMIT_WINDOW_SECONDS`, and `MAX_ACTIVE_SCANS_PER_USER` control user scan limits.
+- `MAIL_CONSOLE_FALLBACK=true` prints verification/reset mail to the console when SMTP is not configured.
+- Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
 
-You need `nmap` available on the machine because the app uses `python-nmap`.
+## Run With Docker Compose
+
+Recommended for local full-stack usage:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+http://localhost:5000
+```
+
+Compose starts both the Flask app and MongoDB. MongoDB is available inside the Compose network and uses the credentials from `.env`.
+
+## Run Locally
+
+Install system dependencies first. `nmap` is required for port scanning, and WeasyPrint may require native libraries depending on your OS.
 
 On Debian/Ubuntu:
 
@@ -108,132 +97,57 @@ sudo apt update
 sudo apt install -y nmap
 ```
 
-WeasyPrint may also require extra native libraries depending on your OS.
-
-### 2. Create and activate a virtual environment
+Create the virtual environment and install Python dependencies:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install Python dependencies
-
-```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
-
-Create `.env` from `.env.example` and edit it:
-
-```env
-SECRET_KEY=replace_with_a_random_secret
-MONGO_URI=mongodb://localhost:27017/webvuln
-MONGO_ROOT_USERNAME=webvuln_admin
-MONGO_ROOT_PASSWORD=replace_with_a_random_mongo_password
-MAIL_SERVER=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USE_TLS=true
-MAIL_USERNAME=your_email@gmail.com
-MAIL_PASSWORD=your_16char_app_password
-MAIL_DEFAULT_SENDER=your_email@gmail.com
-SCAN_RATE_LIMIT_MAX=5
-SCAN_RATE_LIMIT_WINDOW_SECONDS=3600
-MAX_ACTIVE_SCANS_PER_USER=1
-SCAN_WORKERS=2
-MIN_PASSWORD_LENGTH=10
-SESSION_COOKIE_SECURE=false
-SESSION_COOKIE_SAMESITE=Lax
-ALLOW_PRIVATE_TARGETS=false
-REVEAL_DISCOVERED_CREDENTIALS=false
-```
-
-### 5. Start MongoDB
-
-Make sure MongoDB is running locally, or use a remote MongoDB URI in `.env`.
-
-### 6. Run the app
+Start MongoDB locally or point `MONGO_URI` to an existing MongoDB instance, then run:
 
 ```bash
-python3 -m app.app
+venv/bin/python -m app.app
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:5000
 ```
 
-## Docker
-
-### Build and run with Docker
+If port `5000` is already in use:
 
 ```bash
-docker build -t webvulnscan .
-docker run --rm -p 5000:5000 \
-  -e SECRET_KEY=replace_with_a_random_secret \
-  -e MONGO_URI=mongodb://host.docker.internal:27017/webvuln \
-  webvulnscan
+FLASK_RUN_PORT=5001 venv/bin/python -m app.app
 ```
 
-## Docker Compose
+## Basic Workflow
 
-This repo also includes `docker-compose.yml` with both the web app and MongoDB.
-Set `SECRET_KEY`, `MONGO_ROOT_USERNAME`, and `MONGO_ROOT_PASSWORD` in `.env` before starting.
+1. Register or sign in.
+2. Start a scan against a target you are authorized to test.
+3. Watch live phase progress and scanner events.
+4. Open the report for risk summary, findings, Proof Assistant details, JSON export, or PDF download.
+5. Use the admin console to triage high-priority scans across users.
+
+## Testing
+
+Run the focused test suite:
 
 ```bash
-docker compose up --build
+venv/bin/python -m unittest tests.test_scanner_helpers tests.test_safe_http_client tests.test_security
 ```
 
-Then open:
+Or run pytest if installed in your environment:
 
-```text
-http://localhost:5000
+```bash
+venv/bin/python -m pytest
 ```
 
-Default compose environment:
+## Notes
 
-- App: `http://localhost:5000`
-- MongoDB is available only inside the Compose network and requires authentication.
-- Mail and scan-rate settings are loaded from `.env` when present
-
-## App Flow
-
-1. Open `/`
-2. Register your account
-3. Verify your email and sign in
-4. Start a scan on a target URL
-5. Watch the live stream output
-6. Open the generated report
-7. Export JSON or download the PDF report if needed
-8. Revisit prior scans from the dashboard history table
-
-## Important Notes
-
-- This project is intended for authorized security testing only.
-- Scans can take time depending on the target and enabled modules.
-- Scan events, reports, and history are persisted in MongoDB.
-- User accounts, reset tokens, and auth throttle buckets are stored in MongoDB.
-
-## Troubleshooting
-
-### PDF download shows an error
-
-Check:
-
-- WeasyPrint system dependencies are installed
-- the scan has completed successfully
-- the scan has stored a completed report in MongoDB
-
-### Scan appears stuck
-
-Some phases such as LFI checks, file exposure checks, and subdomain enumeration can take longer depending on the target.
-
-### Login/session issues
-
-Make sure `SECRET_KEY` is set and stable. Changing it invalidates existing sessions.
-
-## License / Usage
-
-Use this project only on systems you own or are explicitly authorized to test.
+- Use this project only on systems you own or are explicitly authorized to test.
+- Active checks can be slow or noisy depending on the target, scan mode, forms, redirects, WAF behavior, and network latency.
+- Scan reports, events, users, reset tokens, and rate-limit data are stored in MongoDB.
+- The development server is not intended for production. Use a proper WSGI server and HTTPS for deployed environments.
