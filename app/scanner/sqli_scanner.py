@@ -3,6 +3,8 @@ import time
 from functools import lru_cache
 from urllib.parse import urljoin
 
+import requests
+
 from app.form_parser import get_forms
 from app.scanner.common import response_excerpt, should_stop_scan
 from app.scanner.http_client import safe_scanner_session

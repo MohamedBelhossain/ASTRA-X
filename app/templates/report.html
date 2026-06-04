@@ -1,3 +1,67 @@
+{% macro proof_panel(proof) -%}
+  {% if proof %}
+    <p class="finding-summary">{{ proof.summary }}</p>
+    <div class="proof-block">
+      <div class="proof-head">
+        <span class="proof-title">Proof Assistant</span>
+        <span class="proof-pill">{{ proof.confidence | upper }} CONFIDENCE</span>
+      </div>
+      <div class="evidence-grid">
+        <div class="evidence-box">
+          <span class="evidence-title">Request Tested</span>
+          <div class="evidence-text">
+            <span class="detail-val method">{{ proof.request.method }}</span>
+            <span class="detail-val url">{{ proof.request.url }}</span>
+          </div>
+        </div>
+        <div class="evidence-box">
+          <span class="evidence-title">Input Point</span>
+          <div class="evidence-text">{{ proof.request.parameter or "Path / response behavior" }}</div>
+        </div>
+        {% if proof.request.payload %}
+        <div class="evidence-box full">
+          <span class="evidence-title">Payload Used</span>
+          <div class="evidence-code">{{ proof.request.payload }}</div>
+        </div>
+        {% endif %}
+        <div class="evidence-box">
+          <span class="evidence-title">Observed Behavior</span>
+          <div class="evidence-text">{{ proof.evidence.observed }}</div>
+        </div>
+        <div class="evidence-box">
+          <span class="evidence-title">Impact</span>
+          <div class="evidence-text">{{ proof.impact }}</div>
+        </div>
+      </div>
+      <div class="proof-columns">
+        <div class="proof-list">
+          <span class="evidence-title">False-Positive Checks</span>
+          <ol>
+            {% for item in proof.false_positive_checks %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+        <div class="proof-list">
+          <span class="evidence-title">Safe Reproduction</span>
+          <ol>
+            {% for item in proof.reproduction_steps %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+        <div class="proof-list full">
+          <span class="evidence-title">Fix Guidance</span>
+          <ol>
+            {% for item in proof.fix_steps %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{%- endmacro %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -86,8 +150,54 @@
         font-family: 'Courier New', monospace;
         word-break: break-all;
       }
+      .proof-block {
+        border: 1px solid #1f2b24;
+        background: #0f1411;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .proof-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .proof-title {
+        color: #ddd;
+        font-family: var(--font, sans-serif);
+        font-weight: 700;
+      }
+      .proof-pill {
+        border: 1px solid #2e493a;
+        color: #9fdcb8;
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-size: .68rem;
+        font-weight: 700;
+      }
+      .proof-columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .proof-list {
+        border: 1px solid #202020;
+        background: #101010;
+        border-radius: 7px;
+        padding: 10px 12px;
+      }
+      .proof-list.full { grid-column: 1 / -1; }
+      .proof-list ol {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        color: #aaa;
+        line-height: 1.6;
+      }
       @media (max-width: 760px) {
         .evidence-grid { grid-template-columns: 1fr; }
+        .proof-columns { grid-template-columns: 1fr; }
       }
 
       .detail-toggle {
@@ -506,50 +616,9 @@
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode %}
+              {% if not pdf_mode or vuln.proof_assistant %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <p class="finding-summary">
-                  {% if vuln.type == "error-based" %}
-                    The payload triggered a database error message in the HTTP response. This usually means user input is reaching a SQL query without safe parameter binding.
-                  {% elif vuln.type == "boolean-based" %}
-                    Two logically different SQL payloads produced noticeably different responses. That behavior is consistent with injectable SQL conditions.
-                  {% elif vuln.type == "time-based" %}
-                    The response became slower after a delay payload. That suggests the database may be executing attacker-controlled SQL.
-                  {% elif vuln.type == "response-diff" %}
-                    A quote-style probe changed the response size or status enough to indicate that the parameter may be handled unsafely by backend query logic.
-                  {% else %}
-                    The scanner observed behavior that may indicate SQL injection.
-                  {% endif %}
-                </p>
-                <div class="evidence-grid">
-                  <div class="evidence-box">
-                    <span class="evidence-title">Request Tested</span>
-                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or "GET/POST" }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Input Point</span>
-                    <div class="evidence-text">Parameter <span class="detail-val param">{{ vuln.parameter }}</span></div>
-                  </div>
-                  <div class="evidence-box full">
-                    <span class="evidence-title">Payload Used</span>
-                    <div class="evidence-code">{{ vuln.payload }}</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Observed Behavior</span>
-                    <div class="evidence-text">
-                      {% if vuln.matched_error %}Database error matched: {{ vuln.matched_error }}
-                      {% elif vuln.true_false_diff %}True and false SQL conditions differed by {{ vuln.true_false_diff }} bytes.
-                      {% elif vuln.response_diff %}Probe response changed by {{ vuln.response_diff }} bytes.
-                      {% elif vuln.delay_seconds %}Response delayed to {{ vuln.delay_seconds }}s from {{ vuln.baseline_seconds or "baseline" }}.
-                      {% else %}{{ vuln.evidence or "Suspicious response behavior was observed." }}
-                      {% endif %}
-                    </div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Recommended Check</span>
-                    <div class="evidence-text">Retest this parameter manually, then verify the backend uses parameterized queries and does not concatenate user input into SQL.</div>
-                  </div>
-                </div>
+                {{ proof_panel(vuln.proof_assistant) }}
               </div>
               {% endif %}
             </div>
@@ -584,39 +653,9 @@
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode %}
+              {% if not pdf_mode or vuln.proof_assistant %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <p class="finding-summary">
-                  {% if vuln.type == "stored" %}
-                    The payload appeared again after a follow-up request, which suggests attacker-controlled script can be saved and later shown to users.
-                  {% elif vuln.type == "reflected" %}
-                    The payload was reflected in the immediate response, which can let an attacker craft a malicious link if the value is rendered as executable HTML or JavaScript.
-                  {% else %}
-                    The page contains client-side DOM sinks that may process attacker-controlled browser input.
-                  {% endif %}
-                </p>
-                <div class="evidence-grid">
-                  <div class="evidence-box">
-                    <span class="evidence-title">Request Tested</span>
-                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or ("GET" if vuln.type == "dom-based" else "GET/POST") }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Input Point</span>
-                    <div class="evidence-text">{{ vuln.parameter }}</div>
-                  </div>
-                  <div class="evidence-box full">
-                    <span class="evidence-title">Payload Used</span>
-                    <div class="evidence-code">{{ vuln.payload }}</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Observed Behavior</span>
-                    <div class="evidence-text">{{ vuln.evidence or "Payload or DOM sink was observed in the response." }}</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Recommended Check</span>
-                    <div class="evidence-text">Confirm the payload executes in a browser context, then encode output by context and sanitize any allowed HTML.</div>
-                  </div>
-                </div>
+                {{ proof_panel(vuln.proof_assistant) }}
               </div>
               {% endif %}
             </div>
@@ -651,33 +690,9 @@
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode %}
+              {% if not pdf_mode or vuln.proof_assistant %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <p class="finding-summary">
-                  The scanner sent a traversal payload through a query parameter and saw response content that looks like a local server file. This can expose credentials, configuration, source code, or operating system files.
-                </p>
-                <div class="evidence-grid">
-                  <div class="evidence-box">
-                    <span class="evidence-title">Request Tested</span>
-                    <div class="evidence-text"><span class="detail-val method">{{ vuln.method or "GET" }}</span> <span class="detail-val url">{{ vuln.url }}</span></div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Input Point</span>
-                    <div class="evidence-text">Parameter <span class="detail-val param">{{ vuln.param }}</span></div>
-                  </div>
-                  <div class="evidence-box full">
-                    <span class="evidence-title">Payload Used</span>
-                    <div class="evidence-code">{{ vuln.payload }}</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Observed Behavior</span>
-                    <div class="evidence-text">{{ vuln.evidence or "Sensitive local-file marker appeared in the response." }}</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Recommended Check</span>
-                    <div class="evidence-text">Restrict file reads to an allowlisted directory, normalize paths before access, and reject traversal sequences before opening files.</div>
-                  </div>
-                </div>
+                {{ proof_panel(vuln.proof_assistant) }}
               </div>
               {% endif %}
             </div>
@@ -777,29 +792,9 @@
                 <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode %}
+              {% if not pdf_mode or f.proof_assistant %}
               <div class="vuln-details-panel" id="{{ vid }}">
-                <p class="finding-summary">
-                  A path commonly associated with sensitive files returned a non-error response. Review whether this file should be publicly reachable.
-                </p>
-                <div class="evidence-grid">
-                  <div class="evidence-box">
-                    <span class="evidence-title">Request Tested</span>
-                    <div class="evidence-text"><span class="detail-val method">GET</span> <span class="detail-val url">{{ f.url }}</span></div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">HTTP Result</span>
-                    <div class="evidence-text">Status <span class="detail-val status-{{ f.status }}">{{ f.status }}</span>, {{ f.size }} bytes</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Risk</span>
-                    <div class="evidence-text">The file may reveal configuration, deployment metadata, credentials, backups, or source information.</div>
-                  </div>
-                  <div class="evidence-box">
-                    <span class="evidence-title">Recommended Check</span>
-                    <div class="evidence-text">Remove the file from the web root or block it at the web server and deployment pipeline.</div>
-                  </div>
-                </div>
+                {{ proof_panel(f.proof_assistant) }}
               </div>
               {% endif %}
             </div>

@@ -26,7 +26,7 @@ from app.scanner.nmap import run_nmap
 from app.scanner.sqli_scanner import scan_sqli
 from app.scanner.subdomain_scanner import scan_subdomains
 from app.scanner.xss_scanner import scan_xss
-from app.reporting import SCAN_USAGE_NOTICE, build_risk_summary, empty_risk_summary
+from app.reporting import SCAN_USAGE_NOTICE, build_risk_summary, empty_risk_summary, enrich_report_with_proofs
 from app.security import (
     SSRFValidator,
     TargetValidationError,
@@ -340,8 +340,12 @@ def scan_doc_for_current_user(scan_id):
 
 def report_for_current_user(scan_id):
     if getattr(current_user, "is_admin", False):
-        return ScanRecord.serializable_report(scan_id)
-    return ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
+        data = ScanRecord.serializable_report(scan_id)
+    else:
+        data = ScanRecord.serializable_report_for_owner(scan_id, current_user.id)
+    if data:
+        enrich_report_with_proofs(data)
+    return data
 
 
 def scan_doc_for_user(scan_id, user_id, is_admin=False):
@@ -418,6 +422,7 @@ def _is_lfi_candidate(url):
 
 def finalize_scan(scan_id, status, report, last_error=None):
     report["usage_notice"] = SCAN_USAGE_NOTICE
+    enrich_report_with_proofs(report)
     report["risk_summary"] = build_risk_summary(report)
     ScanRecord.finalize_report(scan_id, report)
     ScanRecord.update_status(scan_id, status, last_error=last_error)

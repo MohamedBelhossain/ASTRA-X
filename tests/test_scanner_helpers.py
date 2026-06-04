@@ -7,7 +7,7 @@ from app.scanner.common import response_excerpt
 from app.scanner.crawler import get_links, normalize
 from app.scanner.cms_scanner import detect_cms, lookup_cves
 from app.scanner.header_scanner import scan_security_headers
-from app.reporting import build_risk_summary
+from app.reporting import build_risk_summary, enrich_report_with_proofs
 
 
 class FakeResponse:
@@ -148,6 +148,29 @@ class ScannerHelpersTest(unittest.TestCase):
         self.assertEqual(summary["severity_counts"]["low"], 2)
         self.assertEqual(summary["total_findings"], 10)
         self.assertTrue(summary["recommendations"])
+
+    def test_enrich_report_adds_structured_proof_assistant(self):
+        report = {
+            "vulnerabilities": [
+                {
+                    "type": "error-based",
+                    "url": "https://example.test/search",
+                    "parameter": "q",
+                    "payload": "'",
+                    "matched_error": "sql syntax",
+                    "method": "GET",
+                    "severity": "critical",
+                    "confidence": "confirmed",
+                }
+            ]
+        }
+
+        enriched = enrich_report_with_proofs(report)
+        proof = enriched["vulnerabilities"][0]["proof_assistant"]
+
+        self.assertEqual(proof["category"], "sqli")
+        self.assertEqual(proof["request"]["parameter"], "q")
+        self.assertIn("parameterized queries", " ".join(proof["fix_steps"]))
 
 
 if __name__ == "__main__":
