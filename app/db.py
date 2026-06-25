@@ -1,3 +1,4 @@
+import logging
 import os
 from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
@@ -7,11 +8,12 @@ if os.getenv("RUNNING_IN_DOCKER", "").lower() not in {"1", "true", "yes", "on"}:
     load_dotenv()
 
 uri = os.getenv("MONGO_URI")
+logger = logging.getLogger("webvulnscan.db")
 
 client = MongoClient(uri, server_api=ServerApi('1'))
 
 try:
     client.admin.command('ping')
-    print("Connected!")
+    logger.debug("MongoDB connection verified.")
 except Exception as e:
-    print(e)
+    logger.error("MongoDB connection failed: %s", e)

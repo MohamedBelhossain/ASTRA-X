@@ -4,6 +4,7 @@ import secrets
 import string
 import time
 
+import requests
 from flask import (
     Blueprint,
     current_app,
@@ -19,7 +20,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from flask_mail import Mail, Message
 
 from .models import RateLimitBucket, ResetToken, User
-from .security import code_matches, get_client_ip, hash_code
+from .security import bool_env, code_matches, get_client_ip, hash_code
 
 bcrypt = Bcrypt()
 mail = Mail()
@@ -27,6 +28,13 @@ auth = Blueprint("auth", __name__)
 CODE_TTL_SECONDS = 600
 MIN_PASSWORD_LENGTH = int(os.environ.get("MIN_PASSWORD_LENGTH", "10"))
 CAPTCHA_TTL_SECONDS = 600
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_USE_TEST_KEYS = bool_env(os.environ.get("TURNSTILE_USE_TEST_KEYS"), default=False)
+TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA"
+TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA"
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+TURNSTILE_TIMEOUT = int(os.environ.get("TURNSTILE_TIMEOUT", "8"))
 
 
 def generate_code():
@@ -78,11 +86,69 @@ def _captcha_matches(answer):
     return bool(expected and secrets.compare_digest(expected, provided))
 
 
+def _turnstile_enabled():
+    return bool(_turnstile_site_key() and _turnstile_secret_key())
+
+
+def _turnstile_site_key():
+    if TURNSTILE_USE_TEST_KEYS:
+        return TURNSTILE_TEST_SITE_KEY
+    return TURNSTILE_SITE_KEY
+
+
+def _turnstile_secret_key():
+    if TURNSTILE_USE_TEST_KEYS:
+        return TURNSTILE_TEST_SECRET_KEY
+    return TURNSTILE_SECRET_KEY
+
+
+def _verify_turnstile(token):
+    if not _turnstile_enabled():
+        return False
+    if not token:
+        return False
+
+    try:
+        response = requests.post(
+            TURNSTILE_VERIFY_URL,
+            data={
+                "secret": _turnstile_secret_key(),
+                "response": token,
+                "remoteip": get_client_ip(request),
+            },
+            timeout=TURNSTILE_TIMEOUT,
+        )
+        response.raise_for_status()
+        result = response.json()
+    except requests.RequestException as exc:
+        current_app.logger.warning("Turnstile verification request failed: %s", exc)
+        return False
+    except ValueError:
+        current_app.logger.warning("Turnstile verification returned invalid JSON.")
+        return False
+
+    if result.get("success"):
+        return True
+
+    current_app.logger.warning(
+        "Turnstile verification failed: %s",
+        ",".join(result.get("error-codes", [])) or "unknown",
+    )
+    return False
+
+
+def _security_check_matches():
+    if _turnstile_enabled():
+        return _verify_turnstile(request.form.get("cf-turnstile-response", ""))
+    return _captcha_matches(request.form.get("captcha_answer", ""))
+
+
 def _render_register(form_data=None):
     return render_template(
         "register.html",
         form_data=form_data or {},
-        captcha=_register_captcha(),
+        captcha=None if _turnstile_enabled() else _register_captcha(),
+        turnstile_site_key=_turnstile_site_key() if _turnstile_enabled() else "",
         min_password_length=MIN_PASSWORD_LENGTH,
     )
 
@@ -242,7 +308,6 @@ def register():
         email = normalize_email(request.form.get("email", ""))
         password = request.form.get("password", "").strip()
         confirm = request.form.get("confirm_password", "").strip()
-        captcha_answer = request.form.get("captcha_answer", "")
         honeypot = request.form.get("company_website", "").strip()
         form_data = {"username": username, "email": email}
 
@@ -262,7 +327,7 @@ def register():
         ):
             return _render_register(form_data)
 
-        if not _captcha_matches(captcha_answer):
+        if not _security_check_matches():
             flash("Security check failed. Please solve the new challenge.", "danger")
             _new_register_captcha()
             return _render_register(form_data)

@@ -58,6 +58,9 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change_this_admin_password
 
 MAIL_CONSOLE_FALLBACK=true
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+TURNSTILE_USE_TEST_KEYS=false
 ALLOW_PRIVATE_TARGETS=false
 REVEAL_DISCOVERED_CREDENTIALS=false
 ```
@@ -68,7 +71,36 @@ Important options:
 - `REVEAL_DISCOVERED_CREDENTIALS=false` redacts discovered passwords in reports.
 - `SCAN_RATE_LIMIT_MAX`, `SCAN_RATE_LIMIT_WINDOW_SECONDS`, and `MAX_ACTIVE_SCANS_PER_USER` control user scan limits.
 - `MAIL_CONSOLE_FALLBACK=true` prints verification/reset mail to the console when SMTP is not configured.
+- `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` enable Cloudflare Turnstile on registration. When they are empty, the local math captcha fallback is used.
+- `TURNSTILE_USE_TEST_KEYS=true` uses Cloudflare's official test keys for local development on `localhost` or `127.0.0.1`.
 - Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
+
+### Free Captcha Setup
+
+Cloudflare Turnstile is used for the real captcha integration.
+
+1. Create a free Turnstile widget in the Cloudflare dashboard.
+2. Add your app hostname, for example `localhost` for local testing and your real domain for production.
+3. Copy the site key and secret key into `.env`:
+
+```env
+TURNSTILE_SITE_KEY=your_site_key
+TURNSTILE_SECRET_KEY=your_secret_key
+```
+
+Restart the app after changing `.env`.
+
+For localhost testing, use:
+
+```env
+TURNSTILE_USE_TEST_KEYS=true
+```
+
+For production, use your real keys and set:
+
+```env
+TURNSTILE_USE_TEST_KEYS=false
+```
 
 ## Run With Docker Compose
 

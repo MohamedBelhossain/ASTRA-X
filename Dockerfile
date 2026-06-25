@@ -20,4 +20,4 @@ RUN apt-get update \
 COPY . .
 
 # MONGO_URI and SECRET_KEY should be passed as environment variables at runtime.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "120", "app.app:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app.app:app"]

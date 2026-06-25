@@ -4,7 +4,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from app.scanner.common import response_excerpt, session_headers, should_stop_scan
+from app.scanner.common import response_excerpt, scanner_log, session_headers, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -252,12 +252,12 @@ def lookup_cves(cms_name, version=None, should_stop=None):
 
 
 def scan_cms(base_url, should_stop=None):
-    print(f"\n[CMS] Fingerprinting: {base_url}")
+    scanner_log(f"\n[CMS] Fingerprinting: {base_url}")
     detected = detect_cms(base_url, should_stop=should_stop)
     cves = []
     if detected.get("detected") and not should_stop_scan(should_stop):
         cves = lookup_cves(detected.get("name"), detected.get("version"), should_stop=should_stop)
-    print(f"[CMS] Detected={detected.get('name') or 'none'} CVEs={len(cves)}")
+    scanner_log(f"[CMS] Detected={detected.get('name') or 'none'} CVEs={len(cves)}")
     return {
         "detected": detected,
         "cves": cves,

@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Register – WebVulnScan</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% if turnstile_site_key %}
+    <link rel="preconnect" href="https://challenges.cloudflare.com">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
 </head>
 <body class="auth-page">
 <div class="page-shell auth-narrow-shell">
@@ -66,11 +70,20 @@
 
         <div class="field-row">
           <label>Security Check</label>
-          <div class="captcha-row">
-            <span class="captcha-question">{{ captcha.question if captcha else '' }}</span>
-            <input type="text" inputmode="numeric" pattern="[0-9]*" name="captcha_answer"
-                   placeholder="answer" autocomplete="off" required>
-          </div>
+          {% if turnstile_site_key %}
+            <div class="turnstile-wrap">
+              <div class="cf-turnstile"
+                   data-sitekey="{{ turnstile_site_key }}"
+                   data-theme="dark"
+                   data-size="flexible"></div>
+            </div>
+          {% else %}
+            <div class="captcha-row">
+              <span class="captcha-question">{{ captcha.question if captcha else '' }}</span>
+              <input type="text" inputmode="numeric" pattern="[0-9]*" name="captcha_answer"
+                     placeholder="answer" autocomplete="off" required>
+            </div>
+          {% endif %}
         </div>
 
         <button type="submit">Create Account</button>

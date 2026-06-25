@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 import requests
 
 from app.form_parser import get_forms
-from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.common import response_excerpt, scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import XSS_DOM_PAYLOADS as DOM_PAYLOADS, XSS_PAYLOADS
 
@@ -44,7 +44,7 @@ def _send(client, method, url, data, timeout=REQUEST_TIMEOUT):
             return client.post(url, data=data, timeout=timeout, allow_redirects=True)
         return client.get(url, params=data, timeout=timeout, allow_redirects=True)
     except requests.exceptions.RequestException as exc:
-        print(f"  [!] Request failed ({url}): {exc}")
+        scanner_log(f"  [!] Request failed ({url}): {exc}")
         return None
 
 
@@ -71,7 +71,7 @@ def _detect_dom_sinks(html):
 
 
 def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
-    print(f"\n[XSS] Scanning: {url}")
+    scanner_log(f"\n[XSS] Scanning: {url}")
 
     client = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     vulnerabilities = []
@@ -80,10 +80,10 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
     try:
         forms = get_forms_cached(url)
     except Exception as exc:
-        print(f"  [!] Could not get forms: {exc}")
+        scanner_log(f"  [!] Could not get forms: {exc}")
         return vulnerabilities
 
-    print(f"  [XSS] Forms found: {len(forms) if forms else 0}")
+    scanner_log(f"  [XSS] Forms found: {len(forms) if forms else 0}")
     checked = 0
     if not forms:
         try:
@@ -120,7 +120,7 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
         inputs = form.get("inputs", [])
         named_inputs = [field for field in inputs if field.get("name")][:XSS_MAX_PARAMS_PER_FORM]
 
-        print(f"  [XSS] Form {form_idx + 1} inputs: {[field['name'] for field in named_inputs]}")
+        scanner_log(f"  [XSS] Form {form_idx + 1} inputs: {[field['name'] for field in named_inputs]}")
         if not named_inputs:
             continue
 
@@ -144,7 +144,7 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
                     if response is None:
                         continue
                     if _check_reflected(response.text, payload):
-                        print(f"  [VULN] Reflected XSS -> param='{param}' payload='{payload}'")
+                        scanner_log(f"  [VULN] Reflected XSS -> param='{param}' payload='{payload}'")
                         finding = {
                             "type": "reflected",
                             "url": action,
@@ -176,7 +176,7 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
                     if check_response is None:
                         continue
                     if _check_reflected(check_response.text, payload):
-                        print(f"  [VULN] Stored XSS -> param='{param}' payload='{payload}'")
+                        scanner_log(f"  [VULN] Stored XSS -> param='{param}' payload='{payload}'")
                         finding = {
                             "type": "stored",
                             "url": action,
@@ -205,7 +205,7 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
                 dom_sinks = _detect_dom_sinks(response.text)
                 if dom_sinks:
                     payload = DOM_PAYLOADS[0]
-                    print(f"  [VULN] Potential DOM XSS -> url='{response.url}' sinks={dom_sinks[:2]}")
+                    scanner_log(f"  [VULN] Potential DOM XSS -> url='{response.url}' sinks={dom_sinks[:2]}")
                     finding = {
                         "type": "dom-based",
                         "url": response.url,
@@ -223,5 +223,5 @@ def scan_xss(url, should_stop=None, on_progress=None, on_finding=None):
                         on_finding(finding)
                     found.add(key)
 
-    print(f"  [XSS] Found {len(vulnerabilities)} vulnerability(ies).")
+    scanner_log(f"  [XSS] Found {len(vulnerabilities)} vulnerability(ies).")
     return vulnerabilities

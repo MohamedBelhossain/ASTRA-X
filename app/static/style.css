@@ -351,6 +351,16 @@ h3 {
   text-align: center;
 }
 
+.turnstile-wrap {
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+}
+
+.turnstile-wrap .cf-turnstile {
+  width: 100%;
+}
+
 label {
   display: block;
   font-size: 13px;

@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 import requests
 
 from app.form_parser import get_forms
-from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.common import response_excerpt, scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import (
     SQLI_BOOLEAN_PAYLOADS as BOOLEAN_PAYLOADS,
@@ -44,7 +44,7 @@ def _send(client, method, url, data, timeout=REQUEST_TIMEOUT):
         response.elapsed_seconds = round(time.time() - started, 2)
         return response
     except requests.exceptions.RequestException as exc:
-        print(f"  [!] Request failed ({url}): {exc}")
+        scanner_log(f"  [!] Request failed ({url}): {exc}")
         return None
 
 
@@ -74,7 +74,7 @@ def _append(vulnerabilities, finding):
 
 
 def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
-    print(f"\n[*] Scanning: {url}")
+    scanner_log(f"\n[*] Scanning: {url}")
 
     client = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     vulnerabilities = []
@@ -83,16 +83,16 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
     try:
         forms = get_forms_cached(url)
     except Exception as exc:
-        print(f"  [!] Could not retrieve forms: {exc}")
+        scanner_log(f"  [!] Could not retrieve forms: {exc}")
         return vulnerabilities
 
     if not forms:
-        print("  [-] No forms found.")
+        scanner_log("  [-] No forms found.")
         if on_progress:
             on_progress({"url": url, "forms": 0, "checked": 0})
         return vulnerabilities
 
-    print(f"  [+] Found {len(forms)} form(s).")
+    scanner_log(f"  [+] Found {len(forms)} form(s).")
     checked = 0
 
     for form_idx, form in enumerate(forms[:SQLI_MAX_FORMS]):
@@ -106,10 +106,10 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
         named_inputs = [field for field in inputs if field.get("name")][:SQLI_MAX_PARAMS_PER_FORM]
 
         if not named_inputs:
-            print(f"  [-] Form {form_idx + 1}: no named inputs, skipping.")
+            scanner_log(f"  [-] Form {form_idx + 1}: no named inputs, skipping.")
             continue
 
-        print(
+        scanner_log(
             f"\n  [Form {form_idx + 1}] action={action} | method={method} | "
             f"inputs={[field['name'] for field in named_inputs]}"
         )
@@ -117,12 +117,12 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
         baseline_data = _build_data(inputs)
         baseline_resp = _send(client, method, action, baseline_data)
         if baseline_resp is None:
-            print("  [!] Baseline request failed, skipping form.")
+            scanner_log("  [!] Baseline request failed, skipping form.")
             continue
         baseline_len = len(baseline_resp.text)
         baseline_status = baseline_resp.status_code
         baseline_elapsed = getattr(baseline_resp, "elapsed_seconds", 0.0)
-        print(
+        scanner_log(
             f"  [*] Baseline -> status={baseline_status}, len={baseline_len}, "
             f"time={baseline_elapsed:.2f}s"
         )
@@ -150,7 +150,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
 
                     matched = _has_sql_error(response.text)
                     if matched:
-                        print(
+                        scanner_log(
                             f"  [VULN] Error-based SQLi -> param='{param}' "
                             f"payload='{payload}' matched='{matched}'"
                         )
@@ -184,7 +184,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                     diff = abs(len(response.text) - baseline_len)
                     status_changed = response.status_code != baseline_status
                     if diff > 200 or (status_changed and diff > 80):
-                        print(f"  [VULN] Response-diff SQLi -> param='{param}' diff={diff}")
+                        scanner_log(f"  [VULN] Response-diff SQLi -> param='{param}' diff={diff}")
                         finding = {
                             "type": "response-diff",
                             "url": action,
@@ -219,7 +219,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                     diff = abs(len(true_response.text) - len(false_response.text))
                     baseline_diff = abs(len(true_response.text) - baseline_len)
                     if diff > 100 and baseline_diff > 50:
-                        print(
+                        scanner_log(
                             f"  [VULN] Boolean-based SQLi -> param='{param}' true/false diff={diff}"
                         )
                         finding = {
@@ -254,7 +254,7 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                         continue
                     delay = getattr(response, "elapsed_seconds", 0.0)
                     if delay >= max(3.0, baseline_elapsed + 2.5):
-                        print(
+                        scanner_log(
                             f"  [VULN] Time-based SQLi -> param='{param}' "
                             f"payload='{payload}' delay={delay:.2f}s"
                         )
@@ -278,5 +278,5 @@ def scan_sqli(url, should_stop=None, on_progress=None, on_finding=None):
                         found_params.add(key)
                         break
 
-    print(f"\n[*] Scan complete. {len(vulnerabilities)} vulnerability(ies) found.")
+    scanner_log(f"\n[*] Scan complete. {len(vulnerabilities)} vulnerability(ies) found.")
     return vulnerabilities

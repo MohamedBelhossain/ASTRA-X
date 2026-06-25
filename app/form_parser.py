@@ -1,8 +1,10 @@
+import logging
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
 from app.scanner.http_client import safe_scanner_session
 
+logger = logging.getLogger("webvulnscan.forms")
 
 
 def _select_value(select_tag):
@@ -68,6 +70,6 @@ def get_forms(url, client=None):
             )
 
     except Exception as exc:
-        print("Form parsing error:", exc)
+        logger.warning("Form parsing failed for %s: %s", url, exc)
 
     return forms

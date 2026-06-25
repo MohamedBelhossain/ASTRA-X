@@ -3,7 +3,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.common import response_excerpt, scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import FILE_FALSE_POSITIVE_KEYWORDS as KEYWORDS, SENSITIVE_PATHS
 
@@ -22,7 +22,7 @@ def _check_sensitive_path(base, path):
     try:
         response = client.get(url, timeout=3, allow_redirects=True)
     except requests.exceptions.RequestException as exc:
-        print(f"[ERROR] {url} -> {exc}")
+        scanner_log(f"[ERROR] {url} -> {exc}")
         return None
 
     if response.status_code not in [200, 301, 302, 401, 403]:
@@ -51,7 +51,7 @@ def _check_sensitive_path(base, path):
 
 
 def scan_file_exposure(base_url, should_stop=None, on_progress=None, on_finding=None):
-    print(f"\n[FILE] Scanning: {base_url}")
+    scanner_log(f"\n[FILE] Scanning: {base_url}")
 
     findings = []
     parsed = urlparse(base_url)
@@ -72,10 +72,10 @@ def scan_file_exposure(base_url, should_stop=None, on_progress=None, on_finding=
             result = future.result()
             if not result:
                 continue
-            print(f"[FOUND] {result['url']} -> {result['status']}")
+            scanner_log(f"[FOUND] {result['url']} -> {result['status']}")
             findings.append(result)
             if on_finding:
                 on_finding(result)
 
-    print(f"[FILE] Found {len(findings)} result(s)")
+    scanner_log(f"[FILE] Found {len(findings)} result(s)")
     return findings

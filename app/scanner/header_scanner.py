@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.scanner.common import should_stop_scan
+from app.scanner.common import scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 
 SECURITY_HEADERS = {
@@ -81,7 +81,7 @@ def _cookie_findings(response):
 
 
 def scan_security_headers(target_url, should_stop=None):
-    print(f"\n[HEADERS] Inspecting: {target_url}")
+    scanner_log(f"\n[HEADERS] Inspecting: {target_url}")
     result = {
         "url": target_url,
         "status": None,
@@ -119,5 +119,5 @@ def scan_security_headers(target_url, should_stop=None):
         )
 
     result["findings"].extend(_cookie_findings(response))
-    print(f"[HEADERS] Found {len(result['findings'])} issue(s)")
+    scanner_log(f"[HEADERS] Found {len(result['findings'])} issue(s)")
     return result

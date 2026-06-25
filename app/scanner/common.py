@@ -1,5 +1,9 @@
 import re
+import os
+import logging
 from urllib.parse import urlparse
+
+scanner_logger = logging.getLogger("webvulnscan.scanner")
 
 
 def session_headers():
@@ -53,3 +57,10 @@ def should_stop_scan(callback):
 def score_confidence(level):
     order = {"low": 1, "medium": 2, "high": 3, "confirmed": 4}
     return order.get(level, 0)
+
+
+def scanner_log(*parts, level=logging.DEBUG):
+    if os.environ.get("WEBVULNSCAN_VERBOSE_LOGS", "").lower() not in {"1", "true", "yes", "on"}:
+        return
+    message = " ".join(str(part) for part in parts)
+    scanner_logger.log(level, message)

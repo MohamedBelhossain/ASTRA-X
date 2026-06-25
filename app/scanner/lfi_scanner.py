@@ -3,7 +3,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import requests
 
-from app.scanner.common import response_excerpt, should_stop_scan
+from app.scanner.common import response_excerpt, scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import LFI_COMMON_PARAMS as COMMON_PARAMS, LFI_PAYLOADS as PAYLOADS
 
@@ -53,7 +53,7 @@ def scan_lfi(
     max_payloads=8,
     aggressive=False,
 ):
-    print(f"\n[LFI] Scanning: {url}")
+    scanner_log(f"\n[LFI] Scanning: {url}")
     session = safe_scanner_session(timeout=REQUEST_TIMEOUT)
     results = []
     found = set()
@@ -69,7 +69,7 @@ def scan_lfi(
     elif aggressive:
         all_params = COMMON_PARAMS[:max_params]
     else:
-        print("  [-] No query parameters, skipping smart LFI checks.")
+        scanner_log("  [-] No query parameters, skipping smart LFI checks.")
         return results
 
     all_params = all_params[:max_params]
@@ -82,7 +82,7 @@ def scan_lfi(
 
         original_value = query_params.get(param, [""])[0]
         if any(token in param.lower() for token in ["file", "path", "page", "include"]):
-            print(f"  [!] High value parameter: {param}")
+            scanner_log(f"  [!] High value parameter: {param}")
 
         detected = False
         for payload in payloads:
@@ -129,12 +129,12 @@ def scan_lfi(
                     results.append(finding)
                     if on_finding:
                         on_finding(finding)
-                    print(f"  [VULN] LFI -> param='{param}' | {detection}")
+                    scanner_log(f"  [VULN] LFI -> param='{param}' | {detection}")
                     detected = True
                     break
 
             if detected:
                 break
 
-    print(f"  [LFI] Found {len(results)} vulnerability(ies).")
+    scanner_log(f"  [LFI] Found {len(results)} vulnerability(ies).")
     return results

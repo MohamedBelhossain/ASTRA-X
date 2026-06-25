@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,6 +37,31 @@ from app.security import (
     register_template_helpers,
     resolve_public_target,
 )
+
+
+class ConsoleFormatter(logging.Formatter):
+    def format(self, record):
+        return f"[{record.levelname}] {record.getMessage()}"
+
+
+def configure_console_logging():
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(ConsoleFormatter())
+
+    root_logger = logging.getLogger()
+    root_logger.handlers[:] = [handler]
+    root_logger.setLevel(logging.WARNING)
+
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    logging.getLogger("webvulnscan.scanner").setLevel(logging.DEBUG)
+    app.logger.handlers[:] = []
+    app.logger.propagate = True
+
+
+def local_project_url(host, port):
+    visible_host = "127.0.0.1" if host in {"0.0.0.0", "::", ""} else host
+    return f"http://{visible_host}:{port}"
+
 
 app = Flask(__name__)
 
@@ -292,7 +319,22 @@ def get_active_scan_count_for_user(user_id):
     return ScanRecord.count_active_for_user(user_id)
 
 
-def get_scan_quota_context(user_id):
+def get_scan_quota_context(user_id, is_admin=False):
+    active_scans = get_active_scan_count_for_user(user_id)
+    if is_admin:
+        return {
+            "allowed": True,
+            "admin_unlimited": True,
+            "active_scans": active_scans,
+            "count": 0,
+            "limit": "unlimited",
+            "max_active_scans": "unlimited",
+            "remaining": "unlimited",
+            "reset_in": 0,
+            "used": 0,
+            "window_seconds": SCAN_RATE_LIMIT_WINDOW_SECONDS,
+        }
+
     quota = RateLimitBucket.status(
         namespace="scan_start",
         key=str(user_id),
@@ -316,6 +358,12 @@ def consume_scan_quota(user_id):
         "remaining": max(0, SCAN_RATE_LIMIT_MAX - status["count"]),
         "retry_after": status.get("retry_after", 0),
     }
+
+
+def can_start_more_scans(user_id, is_admin=False):
+    if is_admin:
+        return True
+    return get_active_scan_count_for_user(user_id) < MAX_ACTIVE_SCANS_PER_USER
 
 
 def should_stop(scan_id):
@@ -1110,7 +1158,7 @@ def home():
 def index():
     return render_template(
         "index.html",
-        scan_quota=get_scan_quota_context(current_user.id),
+        scan_quota=get_scan_quota_context(current_user.id, current_user.is_admin),
         scan_history=ScanRecord.list_for_user(current_user.id, limit=12),
         usage_notice=SCAN_USAGE_NOTICE,
     )
@@ -1164,22 +1212,21 @@ def start_scan():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    active_scans = get_active_scan_count_for_user(current_user.id)
-    if active_scans >= MAX_ACTIVE_SCANS_PER_USER:
+    if not can_start_more_scans(current_user.id, current_user.is_admin):
         return jsonify(
             {
                 "error": "You already have a scan running. Please wait for it to finish.",
-                "rate_limit": get_scan_quota_context(current_user.id),
+                "rate_limit": get_scan_quota_context(current_user.id, current_user.is_admin),
             }
         ), 429
 
-    quota_result = consume_scan_quota(current_user.id)
-    if not quota_result.get("allowed"):
+    quota_result = {"allowed": True} if current_user.is_admin else consume_scan_quota(current_user.id)
+    if not current_user.is_admin and not quota_result.get("allowed"):
         return jsonify(
             {
                 "error": f"Scan limit reached. Try again in about {quota_result.get('retry_after', 60)} seconds.",
                 "retry_after_seconds": quota_result.get("retry_after", 60),
-                "rate_limit": get_scan_quota_context(current_user.id),
+                "rate_limit": get_scan_quota_context(current_user.id, current_user.is_admin),
             }
         ), 429
 
@@ -1203,7 +1250,7 @@ def start_scan():
             "scan_id": scan_id,
             "target": target_info["target"],
             "scan_mode": scan_mode,
-            "rate_limit": get_scan_quota_context(current_user.id),
+            "rate_limit": get_scan_quota_context(current_user.id, current_user.is_admin),
         }
     )
 
@@ -1325,9 +1372,17 @@ def export_json(scan_id):
 
 
 if __name__ == "__main__":
+    from flask import cli
+
+    cli.show_server_banner = lambda *args, **kwargs: None
+
+    host = os.environ.get("FLASK_RUN_HOST", "127.0.0.1")
+    port = int(os.environ.get("FLASK_RUN_PORT", "5000"))
+    configure_console_logging()
+    print(f"WebVulnScan: {local_project_url(host, port)}", flush=True)
     app.run(
         debug=bool_env(os.environ.get("FLASK_DEBUG"), default=False),
-        host=os.environ.get("FLASK_RUN_HOST", "127.0.0.1"),
-        port=int(os.environ.get("FLASK_RUN_PORT", "5000")),
+        host=host,
+        port=port,
         threaded=True,
     )

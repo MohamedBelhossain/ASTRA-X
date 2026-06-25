@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.scanner.common import should_stop_scan
+from app.scanner.common import scanner_log, should_stop_scan
 from app.scanner.http_client import safe_scanner_session
 from app.scanner.payloads import SUBDOMAINS, SUBDOMAIN_HIGH_RISK as HIGH_RISK
 
@@ -58,7 +58,7 @@ def _get_severity(subdomain, status_code):
 
 
 def scan_subdomains(base_url, max_workers=20, should_stop=None, on_progress=None, on_finding=None):
-    print(f"\n[SUBDOMAIN] Scanning: {base_url}")
+    scanner_log(f"\n[SUBDOMAIN] Scanning: {base_url}")
 
     parsed = urlparse(base_url)
     scheme = parsed.scheme
@@ -81,12 +81,12 @@ def scan_subdomains(base_url, max_workers=20, should_stop=None, on_progress=None
                 on_progress({"checked": checked, "total": len(candidates), "subdomain": futures[future]})
             result = future.result()
             if result:
-                print(f"  [FOUND] {result['subdomain']} -> {result['ip']} ({result['status']})")
+                scanner_log(f"  [FOUND] {result['subdomain']} -> {result['ip']} ({result['status']})")
                 findings.append(result)
                 if on_finding:
                     on_finding(result)
 
     order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda item: (order.get(item["severity"], 3), item["subdomain"]))
-    print(f"  [SUBDOMAIN] Found {len(findings)} subdomain(s).")
+    scanner_log(f"  [SUBDOMAIN] Found {len(findings)} subdomain(s).")
     return findings

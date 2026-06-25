@@ -510,15 +510,24 @@
             <label>Scan Quota</label>
             <div class="mode-card" style="cursor:default;">
               <div class="mode-title">
-                <span>{{ scan_quota.remaining }} / {{ scan_quota.limit }} scans left</span>
-                <span class="mode-badge">{{ scan_quota.active_scans }}/{{ scan_quota.max_active_scans }} active</span>
+                {% if scan_quota.admin_unlimited %}
+                  <span>Unlimited admin scans</span>
+                  <span class="mode-badge">{{ scan_quota.active_scans }} active</span>
+                {% else %}
+                  <span>{{ scan_quota.remaining }} / {{ scan_quota.limit }} scans left</span>
+                  <span class="mode-badge">{{ scan_quota.active_scans }}/{{ scan_quota.max_active_scans }} active</span>
+                {% endif %}
               </div>
               <div class="mode-copy">
-                Per-user limit: {{ scan_quota.limit }} scan(s) every {{ scan_quota.window_seconds // 60 }} minute(s).
-                {% if scan_quota.used %}
-                  Window resets in about {{ scan_quota.reset_in }}s.
+                {% if scan_quota.admin_unlimited %}
+                  Admin accounts can start scans without the per-user quota or active-scan cap.
                 {% else %}
-                  Your quota window is currently clear.
+                  Per-user limit: {{ scan_quota.limit }} scan(s) every {{ scan_quota.window_seconds // 60 }} minute(s).
+                  {% if scan_quota.used %}
+                    Window resets in about {{ scan_quota.reset_in }}s.
+                  {% else %}
+                    Your quota window is currently clear.
+                  {% endif %}
                 {% endif %}
               </div>
             </div>
