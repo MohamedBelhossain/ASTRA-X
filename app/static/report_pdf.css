@@ -54,10 +54,11 @@ script {
 }
 
 .logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #12a150;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #08120d url("astra-x-logo.svg") center / cover no-repeat;
+  border: 1px solid #bfe8d0;
 }
 
 h1,

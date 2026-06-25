@@ -1,6 +1,6 @@
-# WebVulnScan
+# ASTRA-X
 
-WebVulnScan is a Flask-based web vulnerability scanning dashboard for authorized security testing. It combines crawling, vulnerability checks, live scan progress, persistent reports, and an admin triage console backed by MongoDB.
+ASTRA-X is a Flask-based web vulnerability scanning dashboard for authorized security testing. It combines crawling, vulnerability checks, live scan progress, persistent reports, and an admin triage console backed by MongoDB.
 
 The project focuses on making scan results understandable, not just detectable. Findings include a **Proof Assistant** panel with evidence, impact, false-positive checks, safe reproduction steps, and fix guidance.
 

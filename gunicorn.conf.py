@@ -11,4 +11,4 @@ loglevel = os.environ.get("GUNICORN_LOG_LEVEL", "warning")
 
 
 def on_starting(server):
-    print("WebVulnScan: http://127.0.0.1:5000", flush=True)
+    print("ASTRA-X: http://127.0.0.1:5000", flush=True)

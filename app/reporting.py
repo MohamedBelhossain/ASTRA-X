@@ -1,5 +1,5 @@
 SCAN_USAGE_NOTICE = (
-    "Authorized security testing only. WebVulnScan and its authors are not responsible "
+    "Authorized security testing only. ASTRA-X and its authors are not responsible "
     "for misuse, unauthorized scanning, service disruption, or any damage caused by how this tool is used."
 )
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")

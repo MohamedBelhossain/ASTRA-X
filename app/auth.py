@@ -178,7 +178,7 @@ def _send_verification_code(pending):
     code = _issue_pending_code(pending)
     return _send_mail(
         to=pending["email"],
-        subject="WebVulnScan - Verify your email",
+        subject="ASTRA-X - Verify your email",
         body=f"Your verification code is: {code}\n\nExpires in 10 minutes.",
     ), code
 
@@ -268,7 +268,7 @@ def _send_email_change_code(user_id, email):
     token = _issue_email_change_code(user_id, email)
     sent = _send_mail(
         to=email,
-        subject="WebVulnScan - Verify your new email",
+        subject="ASTRA-X - Verify your new email",
         body=(
             f"Your email change verification code is: {token['code']}\n\n"
             "Expires in 10 minutes.\n"
@@ -757,7 +757,7 @@ def forgot_password():
             )
             if not _send_mail(
                 to=email,
-                subject="WebVulnScan - Reset your password",
+                subject="ASTRA-X - Reset your password",
                 body=(
                     f"Your password reset code is: {code}\n\n"
                     "Expires in 10 minutes.\n"
@@ -869,7 +869,7 @@ def resend_reset_code():
         )
         if not _send_mail(
             to=email,
-            subject="WebVulnScan - Reset your password",
+            subject="ASTRA-X - Reset your password",
             body=(
                 f"Your password reset code is: {code}\n\n"
                 "Expires in 10 minutes.\n"

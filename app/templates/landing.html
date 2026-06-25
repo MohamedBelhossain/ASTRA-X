@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebVulnScan</title>
+  <title>ASTRA-X</title>
+  <link rel="icon" href="{{ url_for('static', filename='astra-x-logo.svg') }}" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -72,9 +73,11 @@
       align-items: center;
       justify-content: space-between;
       padding: 1rem 1.5rem;
-      border: 1px solid var(--border);
+      border: 1px solid rgba(0,255,136,0.12);
       border-radius: 10px 10px 0 0;
-      background: rgba(13,19,24,0.9);
+      background:
+        linear-gradient(90deg, rgba(0,255,136,0.08), transparent 35%),
+        rgba(13,19,24,0.92);
       backdrop-filter: blur(12px);
     }
 
@@ -137,29 +140,28 @@
     }
 
     .logo-icon {
-      width: 42px;
-      height: 42px;
-      border: 1.5px solid var(--green);
-      border-radius: 8px;
+      width: 50px;
+      height: 50px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--green-muted);
+      background:
+        url("{{ url_for('static', filename='astra-x-logo.svg') }}") center / cover no-repeat,
+        var(--green-muted);
+      box-shadow: 0 18px 38px rgba(0,255,136,0.16);
       flex-shrink: 0;
     }
 
     .logo-icon::before {
-      content: "⬡";
-      font-size: 1.3rem;
-      color: var(--green);
-      line-height: 1;
+      content: "";
     }
 
     .brand-name {
       font-family: var(--mono);
-      font-size: 1rem;
+      font-size: 1.06rem;
       font-weight: 600;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.14em;
       color: var(--text);
     }
 
@@ -409,7 +411,7 @@
       <span class="dot y"></span>
       <span class="dot g"></span>
     </div>
-    <span class="topbar-title">webvulnscan — security workspace v2.1</span>
+    <span class="topbar-title">astra-x — security workspace v2.1</span>
     <span class="topbar-badge">● SYSTEM READY</span>
   </div>
 
@@ -420,21 +422,21 @@
         <div class="brand">
           <div class="logo-icon"></div>
           <div>
-            <div class="brand-name">WebVulnScan</div>
+            <div class="brand-name">ASTRA-X</div>
             <div class="brand-sub">Web Vulnerability Scanner</div>
           </div>
         </div>
 
         <div class="eyebrow">// Automated Security Analysis</div>
         <h1 class="headline">Find weaknesses<br>before <em>attackers do.</em></h1>
-        <p class="body-text">WebVulnScan is an automated web vulnerability scanner that probes your targets for security flaws — from open ports and misconfigured services to injection vulnerabilities and exposed sensitive files. Point it at a URL, hit scan, and get a detailed breakdown of every risk found.</p>
+        <p class="body-text">ASTRA-X is an automated web vulnerability scanner that probes authorized targets for security flaws — from open ports and misconfigured services to injection vulnerabilities and exposed sensitive files. Point it at a URL, hit scan, and get a detailed breakdown of every risk found.</p>
 
         <div class="connect-block">
           <div class="connect-label">// Get Started</div>
           <div class="connect-desc">Sign in to launch authorized web security scans, review findings, and manage your scan history.</div>
           <div class="actions">
             {% if logged_in %}
-              <a href="{{ url_for('index') }}" class="btn-primary">⬡ Connect &amp; Scan</a>
+              <a href="{{ url_for('index') }}" class="btn-primary">Launch Scan</a>
               <a href="{{ url_for('auth.profile') }}" class="btn-secondary">Account Profile</a>
               <form action="{{ url_for('auth.logout') }}" method="POST" style="display:inline-flex;">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
@@ -454,7 +456,7 @@
       </div>
 
       <div class="hero-right">
-        <div class="feature-label">// What WebVulnScan Detects</div>
+        <div class="feature-label">// What ASTRA-X Detects</div>
 
         <div class="feat-card">
           <div class="feat-header">
@@ -490,7 +492,7 @@
       <div class="status-item"><span class="status-dot"></span>SCANNER ONLINE</div>
       <div class="status-item"><span class="status-dot" style="background:var(--amber); animation:none"></span>AUTHORIZED USE ONLY</div>
       <div class="status-item"><span class="status-dot"></span>REPORTS ENABLED</div>
-      <div class="status-item" style="margin-left:auto; font-size:0.6rem;">WebVulnScan © 2025 — Ethical security testing only</div>
+      <div class="status-item" style="margin-left:auto; font-size:0.6rem;">ASTRA-X © 2025 — Ethical security testing only</div>
     </div>
   </div>
 

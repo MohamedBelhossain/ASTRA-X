@@ -1379,7 +1379,7 @@ if __name__ == "__main__":
     host = os.environ.get("FLASK_RUN_HOST", "127.0.0.1")
     port = int(os.environ.get("FLASK_RUN_PORT", "5000"))
     configure_console_logging()
-    print(f"WebVulnScan: {local_project_url(host, port)}", flush=True)
+    print(f"ASTRA-X: {local_project_url(host, port)}", flush=True)
     app.run(
         debug=bool_env(os.environ.get("FLASK_DEBUG"), default=False),
         host=host,
