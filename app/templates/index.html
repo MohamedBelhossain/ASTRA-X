@@ -6,7 +6,7 @@
   <title>ASTRA-X</title>
   <link rel="icon" href="{{ url_for('static', filename='astra-x-logo.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
+  <style nonce="{{ csp_nonce() }}">
     /* ── Overlay ───────────────────────────────────────────── */
     .progress-overlay {
       position: fixed; inset: 0;
@@ -507,9 +507,9 @@
             </div>
           </div>
 
-          <div class="field-row" style="margin-bottom:14px;">
+          <div class="field-row quota-row">
             <label>Scan Quota</label>
-            <div class="mode-card" style="cursor:default;">
+            <div class="mode-card static-card">
               <div class="mode-title">
                 {% if scan_quota.admin_unlimited %}
                   <span>Unlimited admin scans</span>
@@ -669,7 +669,7 @@
         </div>
       </div>
 
-      <div class="ov-sec" style="margin-top:8px">Live Findings</div>
+      <div class="ov-sec ov-sec-spaced">Live Findings</div>
       <div class="findings-list" id="findings-list">
         <div class="no-findings" id="no-findings">No findings yet…</div>
       </div>
@@ -693,9 +693,9 @@
     <footer class="ov-footer">
       <span class="ov-status" id="ov-status">Connecting…</span>
       <div class="prog-track">
-        <div class="prog-fill" id="prog-fill" style="width:0%"></div>
+        <div class="prog-fill progress-zero" id="prog-fill"></div>
       </div>
-      <button class="go-report show" id="cancel-scan" type="button" style="display:inline-block; background:#222; color:#ddd;">Cancel Scan</button>
+      <button class="go-report show cancel-scan-button" id="cancel-scan" type="button">Cancel Scan</button>
       <a class="go-report" id="go-report" href="#">View Report →</a>
       <a class="go-report secondary" id="back-dashboard" href="/dashboard">Back to Dashboard</a>
     </footer>
@@ -703,7 +703,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
   const form      = document.getElementById("scan-form");
   const overlay   = document.getElementById("progress-overlay");
   const urlInput  = document.getElementById("url-input");

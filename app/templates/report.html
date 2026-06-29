@@ -71,7 +71,7 @@
     <link rel="icon" href="{{ url_for('static', filename='astra-x-logo.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ stylesheet_href }}">
     {% if not pdf_mode %}
-    <style>
+    <style nonce="{{ csp_nonce() }}">
       /* ── Report extras ─────────────────────────────────── */
       .report-container { max-width: 1000px; margin: 0 auto; padding: 28px 20px 60px; }
 
@@ -508,7 +508,7 @@
                   <p><span class="vuln-key">Match Basis</span><span class="vuln-val">{{ cve.match_basis }}</span></p>
                   <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ cve.confidence | upper }}</span></p>
                   <p><span class="vuln-key">Summary</span><span class="vuln-val">{{ cve.description }}</span></p>
-                  <p><span class="vuln-key">Reference</span><span class="vuln-val"><a href="{{ cve.url }}" target="_blank" style="color:var(--accent)">{{ cve.url }}</a></span></p>
+                  <p><span class="vuln-key">Reference</span><span class="vuln-val"><a href="{{ cve.url }}" target="_blank" rel="noopener noreferrer" class="link-accent">{{ cve.url }}</a></span></p>
                 </div>
               </div>
             {% endfor %}
@@ -570,10 +570,10 @@
         {% endif %}
         {% if pages %}
           {% if not pdf_mode %}
-          <button class="detail-toggle" onclick="toggleEl('pages-list')">▶ Show all URLs</button>
+          <button class="detail-toggle" type="button" data-target="pages-list">▶ Show all URLs</button>
           <div class="pages-list" id="pages-list">
             {% for p in pages %}
-              <a class="page-url" href="{{ p }}" target="_blank">{{ p }}</a>
+              <a class="page-url" href="{{ p }}" target="_blank" rel="noopener noreferrer">{{ p }}</a>
             {% endfor %}
           </div>
           {% else %}
@@ -614,7 +614,7 @@
                   <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
+                <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode or vuln.proof_assistant %}
@@ -651,7 +651,7 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
+                <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode or vuln.proof_assistant %}
@@ -688,7 +688,7 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ vuln.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
+                <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode or vuln.proof_assistant %}
@@ -781,7 +781,7 @@
               <div class="vuln-body">
                 <p><span class="vuln-key">URL</span>
                   <span class="vuln-val">
-                    <a href="{{ f.url }}" target="_blank" style="color:var(--accent)">{{ f.url }}</a>
+                    <a href="{{ f.url }}" target="_blank" rel="noopener noreferrer" class="link-accent">{{ f.url }}</a>
                   </span>
                 </p>
                 <p><span class="vuln-key">HTTP Status</span><span class="vuln-val">{{ f.status }}</span></p>
@@ -790,7 +790,7 @@
                 <p><span class="vuln-key">Confidence</span><span class="vuln-val">{{ f.confidence | upper }}</span></p>
                 {% endif %}
                 {% if not pdf_mode %}
-                <button class="detail-toggle" onclick="toggleEl('{{ vid }}')">▶ View evidence</button>
+                <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
               {% if not pdf_mode or f.proof_assistant %}
@@ -816,7 +816,7 @@
             <tbody>
               {% for f in subdomain_findings %}
                 <tr>
-                  <td><a href="{{ f.url }}" target="_blank" style="color:var(--accent)">{{ f.subdomain }}</a></td>
+                  <td><a href="{{ f.url }}" target="_blank" rel="noopener noreferrer" class="link-accent">{{ f.subdomain }}</a></td>
                   <td>{{ f.ip }}</td>
                   <td>{{ f.status }}</td>
                   <td>{{ f.title or "—" }}</td>
@@ -841,12 +841,12 @@
       </div>
     </div>
 
-    <script>
-      function toggleEl(id) {
+    <script nonce="{{ csp_nonce() }}">
+      function toggleEl(id, button) {
         const el = document.getElementById(id);
         if (!el) return;
         el.classList.toggle("open");
-        const btn = el.previousElementSibling;
+        const btn = button || el.previousElementSibling;
         if (btn && btn.classList.contains("detail-toggle")) {
           btn.textContent = el.classList.contains("open")
             ? "▼ Hide details"
@@ -859,6 +859,10 @@
           btn.classList.toggle("open", el.classList.contains("open"));
         }
       }
+
+      document.querySelectorAll(".detail-toggle[data-target]").forEach((button) => {
+        button.addEventListener("click", () => toggleEl(button.dataset.target, button));
+      });
     </script>
 
   </body>

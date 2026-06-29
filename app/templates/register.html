@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% if turnstile_site_key %}
     <link rel="preconnect" href="https://challenges.cloudflare.com">
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script nonce="{{ csp_nonce() }}" src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}
 </head>
 <body class="auth-page">
@@ -35,7 +35,7 @@
         {% endfor %}
       {% endwith %}
 
-      <p style="font-size:13px; color:#aaa; margin-bottom:16px;">
+      <p class="auth-helper-text">
         Create your account, then confirm it with the 6-digit email code.
       </p>
       <form action="{{ url_for('auth.register') }}" method="POST" class="form-stack">

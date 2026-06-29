@@ -156,7 +156,7 @@
   </section>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
   document.querySelectorAll(".js-admin-cancel").forEach((button) => {
     button.addEventListener("click", async () => {
       const scanId = button.dataset.scanId;

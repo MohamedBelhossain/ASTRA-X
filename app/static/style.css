@@ -123,6 +123,14 @@ a:hover {
   width: min(500px, 100%);
 }
 
+.verify-shell {
+  max-width: 520px;
+}
+
+.error-shell {
+  max-width: 720px;
+}
+
 .profile-shell {
   width: min(860px, 100%);
 }
@@ -276,6 +284,18 @@ h3 {
   margin-top: 4px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.auth-helper-text {
+  color: #aaa;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.one-time-code-input {
+  font-size: 22px;
+  letter-spacing: 8px;
+  text-align: center;
 }
 
 .auth-copy h1 {
@@ -463,6 +483,48 @@ button:disabled {
 }
 
 .hidden { display: none !important; }
+
+.progress-zero {
+  width: 0%;
+}
+
+.link-accent {
+  color: var(--accent);
+}
+
+.quota-row {
+  margin-bottom: 14px;
+}
+
+.mode-card.static-card {
+  cursor: default;
+}
+
+.ov-sec.ov-sec-spaced {
+  margin-top: 8px;
+}
+
+.go-report.cancel-scan-button {
+  background: #222;
+  color: #ddd;
+  display: inline-block;
+  width: auto;
+}
+
+.scan-status-label {
+  color: #666;
+  font-size: .85rem;
+}
+
+.sidebar-section-title.sidebar-section-spaced {
+  margin-top: 12px;
+}
+
+.no-vulns-msg {
+  color: #444;
+  font-size: .78rem;
+  padding: 12px 20px;
+}
 
 @keyframes spin {
   to { transform: rotate(360deg); }

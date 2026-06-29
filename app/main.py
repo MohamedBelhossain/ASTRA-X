@@ -34,6 +34,7 @@ from app.security import (
     SSRFValidator,
     TargetValidationError,
     bool_env,
+    register_security_headers,
     register_template_helpers,
     resolve_public_target,
 )
@@ -122,6 +123,7 @@ bcrypt.init_app(app)
 mail.init_app(app)
 app.register_blueprint(auth)
 register_template_helpers(app)
+register_security_headers(app)
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"

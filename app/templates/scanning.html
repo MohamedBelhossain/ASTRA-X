@@ -6,7 +6,7 @@
   <title>Scanning — ASTRA-X</title>
   <link rel="icon" href="{{ url_for('static', filename='astra-x-logo.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
+  <style nonce="{{ csp_nonce() }}">
     /* ── Layout ───────────────────────────────────────────────── */
     body { margin: 0; background: var(--bg); font-family: var(--font); color: var(--text); }
 
@@ -408,7 +408,7 @@
       <h1>ASTRA-X</h1>
     </div>
     <div id="pulse" class="pulse-dot"></div>
-    <span id="status-label" style="font-size:.85rem;color:#666">Initialising scan…</span>
+    <span id="status-label" class="scan-status-label">Initialising scan…</span>
     <div class="target-pill">{{ target_url }}</div>
   </header>
 
@@ -468,15 +468,15 @@
       </div>
     </div>
 
-    <div class="sidebar-section-title" style="margin-top:12px">Crawled Pages</div>
+    <div class="sidebar-section-title sidebar-section-spaced">Crawled Pages</div>
     <div class="live-list empty" id="live-pages">Waiting for first page…</div>
 
-    <div class="sidebar-section-title" style="margin-top:12px">Open Ports</div>
+    <div class="sidebar-section-title sidebar-section-spaced">Open Ports</div>
     <div class="live-list empty" id="live-ports">Waiting for port scan…</div>
 
-    <div class="sidebar-section-title" style="margin-top:12px">Live Findings</div>
+    <div class="sidebar-section-title sidebar-section-spaced">Live Findings</div>
     <div class="live-vulns" id="live-vulns">
-      <div style="padding:12px 20px;font-size:.78rem;color:#444" id="no-vulns-msg">No vulnerabilities found yet…</div>
+      <div class="no-vulns-msg" id="no-vulns-msg">No vulnerabilities found yet…</div>
     </div>
   </aside>
 
@@ -501,14 +501,14 @@
   <footer class="scan-footer">
     <span class="status-text" id="footer-status">Connecting to scan engine…</span>
     <div class="progress-track">
-      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+      <div class="progress-fill progress-zero" id="progress-fill"></div>
     </div>
     <a class="view-report-btn" id="view-report-btn" href="#">View Full Report →</a>
   </footer>
 
 </div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
   const SCAN_ID    = "{{ scan_id }}";
   const streamUrl  = `/stream/${SCAN_ID}`;
 
@@ -575,7 +575,7 @@
       <span class="log-ts">${ts()}s</span>
       <span class="log-badge ${badgeMap[level] || 'badge-info'}">${level.toUpperCase()}</span>
       <span class="log-msg ${level}">${escHtml(msg)}</span>
-      ${requestData ? `<span class="log-expand-toggle" onclick="toggleReq('${expandId}')">▶ details</span>` : ''}
+      ${requestData ? `<span class="log-expand-toggle" data-target="${expandId}">▶ details</span>` : ''}
     `;
 
     terminal.appendChild(line);
@@ -601,13 +601,19 @@
     return html;
   }
 
-  window.toggleReq = function(id) {
+  function toggleReq(id) {
     const box = document.getElementById(id);
     if (!box) return;
     box.classList.toggle("open");
     const toggle = box.previousElementSibling.querySelector(".log-expand-toggle");
     if (toggle) toggle.textContent = box.classList.contains("open") ? "▼ details" : "▶ details";
-  };
+  }
+
+  terminal.addEventListener("click", (event) => {
+    const toggle = event.target.closest(".log-expand-toggle");
+    if (!toggle) return;
+    toggleReq(toggle.dataset.target);
+  });
 
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -729,7 +735,7 @@
       <div class="live-vuln-label">
         <span class="tag ${category}">${escHtml(category.toUpperCase())}</span>
         ${escHtml(vuln.type || category)}
-        <button class="expand-btn" onclick="toggleDetail('${id}')">▶</button>
+        <button class="expand-btn" type="button" data-target="${id}">▶</button>
       </div>
       <div class="live-vuln-url">${escHtml((vuln.url || vuln.login_url || vuln.subdomain || '').replace(/https?:\/\/[^/]+/, ''))}</div>
     `;
@@ -747,13 +753,19 @@
     liveVulns.appendChild(detail);
   }
 
-  window.toggleDetail = function(id) {
+  function toggleDetail(id) {
     const d = document.getElementById(id);
     if (!d) return;
     d.classList.toggle("open");
     const btn = d.previousElementSibling.querySelector(".expand-btn");
     if (btn) btn.textContent = d.classList.contains("open") ? "▼" : "▶";
-  };
+  }
+
+  liveVulns.addEventListener("click", (event) => {
+    const button = event.target.closest(".expand-btn");
+    if (!button) return;
+    toggleDetail(button.dataset.target);
+  });
 
   function getSqliSev(t) {
     if (t === "error-based") return "critical";

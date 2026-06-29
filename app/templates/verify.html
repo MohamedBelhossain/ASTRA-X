@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="auth-page">
-<div class="page-shell" style="max-width:520px">
+<div class="page-shell verify-shell">
   <section class="shell-card">
     <div class="window-bar">
       <span class="window-dot r"></span>
@@ -29,7 +29,7 @@
           <div class="alert alert-{{ category }}">{{ message }}</div>
         {% endfor %}
       {% endwith %}
-      <p style="font-size:13px; color:#aaa; margin-bottom:16px;">
+      <p class="auth-helper-text">
         Enter the 6-digit code sent to <strong>{{ pending_email }}</strong>.
       </p>
       {% if code_expired %}
@@ -42,7 +42,7 @@
           <input type="text" name="code" placeholder="123456"
                  value="{{ code_value }}"
                  maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required
-                 style="letter-spacing:8px; font-size:22px; text-align:center;">
+                 class="one-time-code-input">
         </div>
         <button type="submit">Verify Email</button>
       </form>

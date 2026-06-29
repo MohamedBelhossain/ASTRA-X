@@ -8,7 +8,7 @@ import threading
 import time
 from urllib.parse import urljoin, urlparse
 
-from flask import current_app, request, session
+from flask import current_app, g, has_request_context, request, session
 import requests
 
 
@@ -19,6 +19,8 @@ DNS_VALIDATION_ATTEMPTS = 3
 DNS_CACHE_TTL_SECONDS = 300
 HEAD_VERIFICATION_TIMEOUT_SECONDS = 5
 METADATA_IPS = {"169.254.169.254"}
+HSTS_VALUE = "max-age=31536000; includeSubDomains"
+PERMISSIONS_POLICY_VALUE = "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
 
 security_logger = logging.getLogger("webvulnscan.security")
 
@@ -351,11 +353,72 @@ def code_matches(secret_key, namespace, subject, code, expected_digest):
     return secrets.compare_digest(actual, expected_digest)
 
 
-def get_client_ip():
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
+def get_client_ip(request_obj=None):
+    active_request = request if request_obj is None else request_obj
+    forwarded_for = active_request.headers.get("X-Forwarded-For", "")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
-    return request.remote_addr or "unknown"
+    return active_request.remote_addr or "unknown"
+
+
+def get_csp_nonce():
+    if not has_request_context():
+        return ""
+    nonce = getattr(g, "csp_nonce", "")
+    if not nonce:
+        nonce = secrets.token_urlsafe(16)
+        g.csp_nonce = nonce
+    return nonce
+
+
+def build_content_security_policy(nonce):
+    nonce_source = f"'nonce-{nonce}'"
+    directives = [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        f"script-src 'self' {nonce_source} https://challenges.cloudflare.com",
+        "script-src-attr 'none'",
+        f"style-src 'self' {nonce_source} https://fonts.googleapis.com",
+        "style-src-attr 'none'",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self' https://challenges.cloudflare.com",
+        "frame-src https://challenges.cloudflare.com",
+        "child-src https://challenges.cloudflare.com",
+        "media-src 'self'",
+        "manifest-src 'self'",
+        "worker-src 'none'",
+        "upgrade-insecure-requests",
+    ]
+    return "; ".join(directives)
+
+
+def register_security_headers(app):
+    if getattr(app, "_security_headers_registered", False):
+        return
+
+    app._security_headers_registered = True
+
+    @app.before_request
+    def issue_csp_nonce():
+        get_csp_nonce()
+
+    @app.context_processor
+    def inject_csp_nonce():
+        return {"csp_nonce": get_csp_nonce}
+
+    @app.after_request
+    def apply_security_headers(response):
+        response.headers["Strict-Transport-Security"] = HSTS_VALUE
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY_VALUE
+        response.headers["Content-Security-Policy"] = build_content_security_policy(get_csp_nonce())
+        return response
 
 
 def normalize_target(raw_target):

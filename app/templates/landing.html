@@ -6,7 +6,7 @@
   <title>ASTRA-X</title>
   <link rel="icon" href="{{ url_for('static', filename='astra-x-logo.svg') }}" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
+  <style nonce="{{ csp_nonce() }}">
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -297,6 +297,14 @@
       color: var(--text);
     }
 
+    .logout-inline {
+      display: inline-flex;
+    }
+
+    .btn-secondary.logout-button {
+      background: none;
+    }
+
     .feature-label {
       font-family: var(--mono);
       font-size: 0.62rem;
@@ -372,6 +380,16 @@
       animation: pulse 2s ease-in-out infinite;
     }
 
+    .status-dot.warning {
+      background: var(--amber);
+      animation: none;
+    }
+
+    .status-item.copyright {
+      margin-left: auto;
+      font-size: 0.6rem;
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
@@ -438,9 +456,9 @@
             {% if logged_in %}
               <a href="{{ url_for('index') }}" class="btn-primary">Launch Scan</a>
               <a href="{{ url_for('auth.profile') }}" class="btn-secondary">Account Profile</a>
-              <form action="{{ url_for('auth.logout') }}" method="POST" style="display:inline-flex;">
+              <form action="{{ url_for('auth.logout') }}" method="POST" class="logout-inline">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn-secondary" style="background:none;">Logout</button>
+                <button type="submit" class="btn-secondary logout-button">Logout</button>
               </form>
             {% else %}
               <a href="{{ url_for('auth.login') }}" class="btn-primary">Login</a>
@@ -490,9 +508,9 @@
 
     <div class="statusbar">
       <div class="status-item"><span class="status-dot"></span>SCANNER ONLINE</div>
-      <div class="status-item"><span class="status-dot" style="background:var(--amber); animation:none"></span>AUTHORIZED USE ONLY</div>
+      <div class="status-item"><span class="status-dot warning"></span>AUTHORIZED USE ONLY</div>
       <div class="status-item"><span class="status-dot"></span>REPORTS ENABLED</div>
-      <div class="status-item" style="margin-left:auto; font-size:0.6rem;">ASTRA-X © 2025 — Ethical security testing only</div>
+      <div class="status-item copyright">ASTRA-X © 2025 — Ethical security testing only</div>
     </div>
   </div>
 

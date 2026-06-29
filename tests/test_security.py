@@ -1,7 +1,17 @@
+import re
 import unittest
 from unittest.mock import patch
 
-from app.security import SSRFValidator, code_matches, hash_code, normalize_target, resolve_public_target
+from flask import Flask, render_template_string
+
+from app.security import (
+    SSRFValidator,
+    code_matches,
+    hash_code,
+    normalize_target,
+    register_security_headers,
+    resolve_public_target,
+)
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -79,6 +89,46 @@ class SecurityHelpersTest(unittest.TestCase):
                 "https://queued.example",
                 expected_addresses=["93.184.216.34"],
             )
+
+    def test_security_headers_and_nonce_csp_are_applied(self):
+        app = Flask(__name__)
+        app.secret_key = "test-secret"
+        register_security_headers(app)
+
+        @app.route("/")
+        def index():
+            return render_template_string(
+                """
+                <style nonce="{{ csp_nonce() }}">body { color: #fff; }</style>
+                <script nonce="{{ csp_nonce() }}">window.__ok = true;</script>
+                """
+            )
+
+        response = app.test_client().get("/")
+        csp = response.headers["Content-Security-Policy"]
+
+        self.assertEqual(
+            response.headers["Strict-Transport-Security"],
+            "max-age=31536000; includeSubDomains",
+        )
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
+        self.assertEqual(
+            response.headers["Permissions-Policy"],
+            "geolocation=(), camera=(), microphone=(), payment=(), usb=()",
+        )
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("script-src-attr 'none'", csp)
+        self.assertIn("style-src-attr 'none'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertIn("https://challenges.cloudflare.com", csp)
+        self.assertNotIn("unsafe-inline", csp)
+        self.assertNotIn("unsafe-eval", csp)
+
+        nonce = re.search(r"'nonce-([^']+)'", csp).group(1)
+        body = response.get_data(as_text=True)
+        self.assertIn(f'nonce="{nonce}"', body)
 
 
 if __name__ == "__main__":
