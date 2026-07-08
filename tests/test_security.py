@@ -123,6 +123,7 @@ class SecurityHelpersTest(unittest.TestCase):
         self.assertIn("style-src-attr 'none'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
         self.assertIn("https://challenges.cloudflare.com", csp)
+        self.assertIn("https://*.cloudflare.com", csp)
         self.assertNotIn("unsafe-inline", csp)
         self.assertNotIn("unsafe-eval", csp)
 
