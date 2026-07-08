@@ -16,6 +16,14 @@ from flask import Flask, Response, jsonify, make_response, redirect, render_temp
 from flask_login import LoginManager, current_user, login_required
 from weasyprint import HTML
 
+APP_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.dirname(APP_DIR)
+ROOT_ENV_PATH = os.path.join(ROOT_DIR, ".env")
+APP_ENV_PATH = os.path.join(APP_DIR, ".env")
+if os.environ.get("RUNNING_IN_DOCKER", "").lower() not in {"1", "true", "yes", "on"}:
+    load_dotenv(ROOT_ENV_PATH)
+    load_dotenv(APP_ENV_PATH, override=False)
+
 from app.auth import auth, bcrypt, mail
 from app.models import RateLimitBucket, ResetToken, ScanRecord, User, mongo, serialize_document
 from app.scanner.analyser import analyse_nmap
@@ -66,14 +74,6 @@ def local_project_url(host, port):
 
 app = Flask(__name__)
 
-APP_DIR = os.path.dirname(__file__)
-ROOT_DIR = os.path.dirname(APP_DIR)
-ROOT_ENV_PATH = os.path.join(ROOT_DIR, ".env")
-APP_ENV_PATH = os.path.join(APP_DIR, ".env")
-if not bool_env(os.environ.get("RUNNING_IN_DOCKER"), default=False):
-    load_dotenv(ROOT_ENV_PATH)
-    load_dotenv(APP_ENV_PATH, override=False)
-
 
 def normalize_mongo_uri(uri, default_database="webvuln"):
     parsed = urlparse(uri)
@@ -113,6 +113,17 @@ app.config.update(
     REMEMBER_COOKIE_HTTPONLY=True,
     REMEMBER_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
     REMEMBER_COOKIE_SECURE=bool_env(os.environ.get("SESSION_COOKIE_SECURE"), default=False),
+)
+app.logger.info(
+    "Mail config loaded. server=%s port=%s tls=%s username_configured=%s "
+    "password_configured=%s sender_configured=%s console_fallback=%s",
+    app.config.get("MAIL_SERVER"),
+    app.config.get("MAIL_PORT"),
+    app.config.get("MAIL_USE_TLS"),
+    bool(app.config.get("MAIL_USERNAME")),
+    bool(app.config.get("MAIL_PASSWORD")),
+    bool(app.config.get("MAIL_DEFAULT_SENDER")),
+    app.config.get("MAIL_CONSOLE_FALLBACK"),
 )
 
 mongo.init_app(app)

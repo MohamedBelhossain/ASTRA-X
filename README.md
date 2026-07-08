@@ -27,7 +27,7 @@ The project focuses on making scan results understandable, not just detectable. 
 
 ```text
 app/
-  app.py             Main Flask app, routes, scan orchestration
+  main.py            Main Flask app, routes, scan orchestration
   auth.py            Authentication and account routes
   models.py          MongoDB models for users, scans, tokens, rate limits
   reporting.py       Risk summaries and Proof Assistant enrichment
@@ -156,7 +156,7 @@ pip install -r requirements.txt
 Start MongoDB locally or point `MONGO_URI` to an existing MongoDB instance, then run:
 
 ```bash
-venv/bin/python -m app.app
+venv/bin/python -m app.main
 ```
 
 Open:
@@ -168,8 +168,24 @@ http://localhost:5000
 If port `5000` is already in use:
 
 ```bash
-FLASK_RUN_PORT=5001 venv/bin/python -m app.app
+FLASK_RUN_PORT=5001 venv/bin/python -m app.main
 ```
+
+### Render Deployment
+
+For a native Python Render web service:
+
+```bash
+pip install -r requirements.txt
+```
+
+Use this start command:
+
+```bash
+gunicorn -c gunicorn.conf.py app.main:app
+```
+
+Set the same values from `.env` in Render's Environment tab. Render does not read your local `.env` file during deployment.
 
 ## Basic Workflow
 

@@ -939,14 +939,30 @@ def _send_mail(to, subject, body):
         or default_sender in placeholders
     ):
         current_app.logger.warning(
-            "Mail sending skipped because SMTP settings are not configured. %s",
+            "Mail sending skipped because SMTP settings are not configured. "
+            "server=%s port=%s tls=%s username_configured=%s password_configured=%s "
+            "sender_configured=%s. %s",
+            current_app.config.get("MAIL_SERVER"),
+            current_app.config.get("MAIL_PORT"),
+            current_app.config.get("MAIL_USE_TLS"),
+            bool(username),
+            bool(password),
+            bool(default_sender),
             _mail_setup_hint(),
         )
         return False
 
     try:
+        current_app.logger.info(
+            "Sending mail through SMTP. server=%s port=%s tls=%s sender_configured=%s",
+            current_app.config.get("MAIL_SERVER"),
+            current_app.config.get("MAIL_PORT"),
+            current_app.config.get("MAIL_USE_TLS"),
+            bool(default_sender),
+        )
         msg = Message(subject=subject, recipients=[to], body=body, sender=default_sender)
         mail.send(msg)
+        current_app.logger.info("SMTP mail accepted by provider.")
         return True
     except Exception as exc:
         current_app.logger.exception("Mail sending failed: %s", exc)
