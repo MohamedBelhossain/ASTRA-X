@@ -211,17 +211,8 @@ def _mail_console_fallback_enabled():
     )
 
 
-def _mail_backend():
-    return str(current_app.config.get("MAIL_BACKEND") or "smtp").strip().lower()
-
-
-def _mail_setup_hint(backend=None):
-    backend = backend or _mail_backend()
-    if backend == "resend":
-        return "Configure MAIL_BACKEND=resend, RESEND_API_KEY, and MAIL_DEFAULT_SENDER in .env."
-    if backend == "smtp":
-        return "Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env."
-    return "Set MAIL_BACKEND to smtp or resend in .env."
+def _mail_setup_hint():
+    return "Configure Brevo MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env."
 
 
 def _handle_console_code_fallback(flow_name, email, code):
@@ -932,34 +923,24 @@ def logout():
 
 
 def _send_mail(to, subject, body):
-    backend = _mail_backend()
-    if backend == "resend":
-        return _send_resend_mail(to, subject, body)
-    if backend == "smtp":
-        return _send_smtp_mail(to, subject, body)
-
-    current_app.logger.warning(
-        "Mail sending skipped because MAIL_BACKEND=%r is not supported. %s",
-        backend,
-        _mail_setup_hint(backend),
-    )
-    return False
-
-
-def _send_smtp_mail(to, subject, body):
     username = (current_app.config.get("MAIL_USERNAME") or "").strip()
     password = (current_app.config.get("MAIL_PASSWORD") or "").strip()
     default_sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or "").strip()
 
-    placeholders = {"", "your_email@gmail.com", "your_16char_app_password"}
+    placeholders = {
+        "",
+        "<Brevo SMTP login>",
+        "<Brevo SMTP key>",
+        "<Verified Brevo sender email>",
+    }
     if (
         username in placeholders
         or password in placeholders
-        or default_sender in {"", "your_email@gmail.com"}
+        or default_sender in placeholders
     ):
         current_app.logger.warning(
             "Mail sending skipped because SMTP settings are not configured. %s",
-            _mail_setup_hint("smtp"),
+            _mail_setup_hint(),
         )
         return False
 
@@ -970,50 +951,3 @@ def _send_smtp_mail(to, subject, body):
     except Exception as exc:
         current_app.logger.exception("Mail sending failed: %s", exc)
         return False
-
-
-def _send_resend_mail(to, subject, body):
-    api_key = (current_app.config.get("RESEND_API_KEY") or "").strip()
-    default_sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or "").strip()
-    api_url = (
-        current_app.config.get("RESEND_API_URL")
-        or "https://api.resend.com/emails"
-    ).strip()
-    timeout = current_app.config.get("MAIL_HTTP_TIMEOUT", 10)
-
-    if not api_key or not default_sender:
-        current_app.logger.warning(
-            "Mail sending skipped because Resend settings are not configured. %s",
-            _mail_setup_hint("resend"),
-        )
-        return False
-
-    try:
-        response = requests.post(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-                "User-Agent": "ASTRA-X/1.0",
-            },
-            json={
-                "from": default_sender,
-                "to": [to],
-                "subject": subject,
-                "text": body,
-            },
-            timeout=timeout,
-        )
-    except requests.RequestException as exc:
-        current_app.logger.exception("Resend mail sending failed: %s", exc)
-        return False
-
-    if response.status_code >= 400:
-        current_app.logger.error(
-            "Resend mail sending failed with HTTP %s: %s",
-            response.status_code,
-            response.text[:500],
-        )
-        return False
-
-    return True

@@ -7,21 +7,15 @@ from flask import Flask
 import app.auth as auth_module
 
 
-class FakeResponse:
-    def __init__(self, status_code=200, text='{"id":"email_123"}'):
-        self.status_code = status_code
-        self.text = text
-
-
 def make_app(**config):
     app = Flask(__name__)
     app.config.update(
-        MAIL_BACKEND="smtp",
-        MAIL_USERNAME="mailer@example.com",
-        MAIL_PASSWORD="app-password",
+        MAIL_SERVER="smtp-relay.brevo.com",
+        MAIL_PORT=587,
+        MAIL_USE_TLS=True,
+        MAIL_USERNAME="brevo-smtp-login",
+        MAIL_PASSWORD="brevo-smtp-key",
         MAIL_DEFAULT_SENDER="ASTRA-X <verify@example.com>",
-        RESEND_API_URL="https://api.resend.com/emails",
-        MAIL_HTTP_TIMEOUT=3,
     )
     app.config.update(config)
     return app
@@ -63,7 +57,7 @@ class MailDeliveryTest(unittest.TestCase):
         self.assertEqual(calls[0]["family"], socket.AF_INET)
         self.assertEqual(result[0][0], socket.AF_INET)
 
-    def test_smtp_backend_uses_flask_mail_by_default(self):
+    def test_brevo_smtp_uses_flask_mail(self):
         app = make_app()
 
         with app.app_context(), patch.object(auth_module.mail, "send") as send:
@@ -77,38 +71,18 @@ class MailDeliveryTest(unittest.TestCase):
         message = send.call_args.args[0]
         self.assertEqual(message.recipients, ["user@example.com"])
         self.assertEqual(message.sender, "ASTRA-X <verify@example.com>")
+        self.assertEqual(app.config["MAIL_SERVER"], "smtp-relay.brevo.com")
+        self.assertEqual(app.config["MAIL_PORT"], 587)
+        self.assertTrue(app.config["MAIL_USE_TLS"])
 
-    def test_resend_backend_posts_text_email(self):
-        app = make_app(MAIL_BACKEND="resend", RESEND_API_KEY="re_test")
-
-        with app.app_context(), patch("app.auth.requests.post", return_value=FakeResponse()) as post:
-            sent = auth_module._send_mail(
-                "user@example.com",
-                "ASTRA-X - Verify your email",
-                "Your verification code is: 123456",
-            )
-
-        self.assertTrue(sent)
-        post.assert_called_once_with(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": "Bearer re_test",
-                "Accept": "application/json",
-                "User-Agent": "ASTRA-X/1.0",
-            },
-            json={
-                "from": "ASTRA-X <verify@example.com>",
-                "to": ["user@example.com"],
-                "subject": "ASTRA-X - Verify your email",
-                "text": "Your verification code is: 123456",
-            },
-            timeout=3,
+    def test_brevo_smtp_requires_credentials_and_sender(self):
+        app = make_app(
+            MAIL_USERNAME="<Brevo SMTP login>",
+            MAIL_PASSWORD="<Brevo SMTP key>",
+            MAIL_DEFAULT_SENDER="<Verified Brevo sender email>",
         )
 
-    def test_resend_backend_requires_api_key_and_sender(self):
-        app = make_app(MAIL_BACKEND="resend", RESEND_API_KEY="", MAIL_DEFAULT_SENDER="")
-
-        with app.app_context(), patch("app.auth.requests.post") as post:
+        with app.app_context(), patch.object(auth_module.mail, "send") as send:
             sent = auth_module._send_mail(
                 "user@example.com",
                 "ASTRA-X - Verify your email",
@@ -116,7 +90,7 @@ class MailDeliveryTest(unittest.TestCase):
             )
 
         self.assertFalse(sent)
-        post.assert_not_called()
+        send.assert_not_called()
 
 
 if __name__ == "__main__":
