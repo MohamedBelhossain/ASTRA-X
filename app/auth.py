@@ -1,6 +1,7 @@
 import os
 import random
 import secrets
+import socket
 import string
 import time
 
@@ -21,6 +22,25 @@ from flask_mail import Mail, Message
 
 from .models import RateLimitBucket, ResetToken, User
 from .security import bool_env, code_matches, get_client_ip, hash_code
+
+
+_ORIGINAL_GETADDRINFO = getattr(socket, "_astra_x_original_getaddrinfo", socket.getaddrinfo)
+
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _ORIGINAL_GETADDRINFO(host, port, socket.AF_INET, type, proto, flags)
+
+
+def _install_ipv4_only_dns_patch():
+    if getattr(socket, "_astra_x_ipv4_only_dns", False):
+        return
+    socket._astra_x_original_getaddrinfo = _ORIGINAL_GETADDRINFO
+    socket.getaddrinfo = _ipv4_only_getaddrinfo
+    socket._astra_x_ipv4_only_dns = True
+
+
+_install_ipv4_only_dns_patch()
+
 
 bcrypt = Bcrypt()
 mail = Mail()
@@ -191,6 +211,19 @@ def _mail_console_fallback_enabled():
     )
 
 
+def _mail_backend():
+    return str(current_app.config.get("MAIL_BACKEND") or "smtp").strip().lower()
+
+
+def _mail_setup_hint(backend=None):
+    backend = backend or _mail_backend()
+    if backend == "resend":
+        return "Configure MAIL_BACKEND=resend, RESEND_API_KEY, and MAIL_DEFAULT_SENDER in .env."
+    if backend == "smtp":
+        return "Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env."
+    return "Set MAIL_BACKEND to smtp or resend in .env."
+
+
 def _handle_console_code_fallback(flow_name, email, code):
     current_app.logger.warning(
         "%s email delivery failed; console fallback code for %s is %s",
@@ -292,7 +325,7 @@ def _set_pending_email_after_delivery(user_id, email):
         return True
 
     flash(
-        "Email change could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+        f"Email change could not be sent. {_mail_setup_hint()}",
         "danger",
     )
     return False
@@ -375,7 +408,7 @@ def register():
                 return redirect(url_for("auth.verify_email"))
 
             flash(
-                "Verification email could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+                f"Verification email could not be sent. {_mail_setup_hint()}",
                 "danger",
             )
             _new_register_captcha()
@@ -483,7 +516,7 @@ def resend_verification_code():
             return redirect(url_for("auth.verify_email"))
 
         flash(
-            "Verification email could not be resent. Check MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+            f"Verification email could not be resent. {_mail_setup_hint()}",
             "danger",
         )
         return redirect(url_for("auth.verify_email"))
@@ -769,7 +802,7 @@ def forgot_password():
                     return redirect(url_for("auth.reset_password"))
 
                 flash(
-                    "Reset email could not be sent. Configure MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+                    f"Reset email could not be sent. {_mail_setup_hint()}",
                     "danger",
                 )
                 return render_template("forgot_password.html", email_value=email)
@@ -881,7 +914,7 @@ def resend_reset_code():
                 return redirect(url_for("auth.reset_password"))
 
             flash(
-                "Reset email could not be resent. Check MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env.",
+                f"Reset email could not be resent. {_mail_setup_hint()}",
                 "danger",
             )
             return redirect(url_for("auth.reset_password"))
@@ -899,6 +932,21 @@ def logout():
 
 
 def _send_mail(to, subject, body):
+    backend = _mail_backend()
+    if backend == "resend":
+        return _send_resend_mail(to, subject, body)
+    if backend == "smtp":
+        return _send_smtp_mail(to, subject, body)
+
+    current_app.logger.warning(
+        "Mail sending skipped because MAIL_BACKEND=%r is not supported. %s",
+        backend,
+        _mail_setup_hint(backend),
+    )
+    return False
+
+
+def _send_smtp_mail(to, subject, body):
     username = (current_app.config.get("MAIL_USERNAME") or "").strip()
     password = (current_app.config.get("MAIL_PASSWORD") or "").strip()
     default_sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or "").strip()
@@ -910,14 +958,62 @@ def _send_mail(to, subject, body):
         or default_sender in {"", "your_email@gmail.com"}
     ):
         current_app.logger.warning(
-            "Mail sending skipped because SMTP settings are not configured."
+            "Mail sending skipped because SMTP settings are not configured. %s",
+            _mail_setup_hint("smtp"),
         )
         return False
 
     try:
-        msg = Message(subject=subject, recipients=[to], body=body)
+        msg = Message(subject=subject, recipients=[to], body=body, sender=default_sender)
         mail.send(msg)
         return True
     except Exception as exc:
         current_app.logger.exception("Mail sending failed: %s", exc)
         return False
+
+
+def _send_resend_mail(to, subject, body):
+    api_key = (current_app.config.get("RESEND_API_KEY") or "").strip()
+    default_sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or "").strip()
+    api_url = (
+        current_app.config.get("RESEND_API_URL")
+        or "https://api.resend.com/emails"
+    ).strip()
+    timeout = current_app.config.get("MAIL_HTTP_TIMEOUT", 10)
+
+    if not api_key or not default_sender:
+        current_app.logger.warning(
+            "Mail sending skipped because Resend settings are not configured. %s",
+            _mail_setup_hint("resend"),
+        )
+        return False
+
+    try:
+        response = requests.post(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+                "User-Agent": "ASTRA-X/1.0",
+            },
+            json={
+                "from": default_sender,
+                "to": [to],
+                "subject": subject,
+                "text": body,
+            },
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        current_app.logger.exception("Resend mail sending failed: %s", exc)
+        return False
+
+    if response.status_code >= 400:
+        current_app.logger.error(
+            "Resend mail sending failed with HTTP %s: %s",
+            response.status_code,
+            response.text[:500],
+        )
+        return False
+
+    return True

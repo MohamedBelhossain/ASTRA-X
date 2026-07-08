@@ -58,6 +58,7 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change_this_admin_password
 
 MAIL_CONSOLE_FALLBACK=true
+MAIL_BACKEND=smtp
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 TURNSTILE_USE_TEST_KEYS=false
@@ -71,9 +72,35 @@ Important options:
 - `REVEAL_DISCOVERED_CREDENTIALS=false` redacts discovered passwords in reports.
 - `SCAN_RATE_LIMIT_MAX`, `SCAN_RATE_LIMIT_WINDOW_SECONDS`, and `MAX_ACTIVE_SCANS_PER_USER` control user scan limits.
 - `MAIL_CONSOLE_FALLBACK=true` prints verification/reset mail to the console when SMTP is not configured.
+- `MAIL_BACKEND=smtp` uses Flask-Mail SMTP with `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_DEFAULT_SENDER`.
+- `MAIL_BACKEND=resend` sends verification/reset mail through Resend over HTTPS with `RESEND_API_KEY` and `MAIL_DEFAULT_SENDER`. This is recommended on Render or other PaaS hosts where outbound SMTP may be unavailable.
 - `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` enable Cloudflare Turnstile on registration. When they are empty, the local math captcha fallback is used.
 - `TURNSTILE_USE_TEST_KEYS=true` uses Cloudflare's official test keys for local development on `localhost` or `127.0.0.1`.
 - Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
+
+### Mail Delivery
+
+SMTP remains the default for local development:
+
+```env
+MAIL_BACKEND=smtp
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your_email@gmail.com
+MAIL_PASSWORD=your_16char_app_password
+MAIL_DEFAULT_SENDER=your_email@gmail.com
+```
+
+For Render, use Resend's HTTP API to avoid IPv6 and SMTP-port issues:
+
+```env
+MAIL_BACKEND=resend
+RESEND_API_KEY=re_xxxxxxxxx
+MAIL_DEFAULT_SENDER="ASTRA-X <verify@yourdomain.com>"
+```
+
+`RESEND_API_URL` defaults to `https://api.resend.com/emails`, and `MAIL_HTTP_TIMEOUT` defaults to `10` seconds.
 
 ### Free Captcha Setup
 

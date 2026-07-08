@@ -103,6 +103,7 @@ app.config.update(
     MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp.gmail.com"),
     MAIL_PORT=int(os.environ.get("MAIL_PORT", 587)),
     MAIL_USE_TLS=os.environ.get("MAIL_USE_TLS", "true").lower() == "true",
+    MAIL_BACKEND=os.environ.get("MAIL_BACKEND", "smtp").strip().lower(),
     MAIL_USERNAME=os.environ.get("MAIL_USERNAME", "your_email@gmail.com"),
     MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", "your_16char_app_password"),
     MAIL_DEFAULT_SENDER=os.environ.get(
@@ -110,6 +111,9 @@ app.config.update(
         os.environ.get("MAIL_USERNAME", "your_email@gmail.com"),
     ),
     MAIL_CONSOLE_FALLBACK=os.environ.get("MAIL_CONSOLE_FALLBACK", "false").lower() == "true",
+    MAIL_HTTP_TIMEOUT=float(os.environ.get("MAIL_HTTP_TIMEOUT", "10")),
+    RESEND_API_KEY=os.environ.get("RESEND_API_KEY", "").strip(),
+    RESEND_API_URL=os.environ.get("RESEND_API_URL", "https://api.resend.com/emails").strip(),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
     SESSION_COOKIE_SECURE=bool_env(os.environ.get("SESSION_COOKIE_SECURE"), default=False),
