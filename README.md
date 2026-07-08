@@ -70,15 +70,23 @@ Important options:
 - `ALLOW_PRIVATE_TARGETS=false` blocks localhost/private-network scan targets by default.
 - `REVEAL_DISCOVERED_CREDENTIALS=false` redacts discovered passwords in reports.
 - `SCAN_RATE_LIMIT_MAX`, `SCAN_RATE_LIMIT_WINDOW_SECONDS`, and `MAX_ACTIVE_SCANS_PER_USER` control user scan limits.
-- `MAIL_CONSOLE_FALLBACK=true` prints verification/reset mail to the console when SMTP is not configured.
-- Brevo SMTP is used for verification/reset mail. Configure `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`, `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_DEFAULT_SENDER`.
+- `MAIL_CONSOLE_FALLBACK=true` prints verification/reset mail to the console when delivery fails.
+- Brevo transactional email is used for verification/reset mail. Set `BREVO_API_KEY` for HTTPS API delivery, especially on Render. SMTP settings are kept as a fallback when no API key is configured.
 - `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` enable Cloudflare Turnstile on registration. When they are empty, the local math captcha fallback is used.
 - `TURNSTILE_USE_TEST_KEYS=true` uses Cloudflare's official test keys for local development on `localhost` or `127.0.0.1`.
 - Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
 
 ### Mail Delivery
 
-Email delivery uses Brevo SMTP with STARTTLS on port `587`:
+Email delivery prefers Brevo's transactional email HTTPS API:
+
+```env
+BREVO_API_KEY=<Brevo API key>
+MAIL_DEFAULT_SENDER=<Verified Brevo sender email>
+MAIL_TIMEOUT=10
+```
+
+If `BREVO_API_KEY` is empty, the app falls back to Brevo SMTP with STARTTLS on port `587`:
 
 ```env
 MAIL_SERVER=smtp-relay.brevo.com
@@ -87,9 +95,10 @@ MAIL_USE_TLS=true
 MAIL_USERNAME=<Brevo SMTP login>
 MAIL_PASSWORD=<Brevo SMTP key>
 MAIL_DEFAULT_SENDER=<Verified Brevo sender email>
+MAIL_TIMEOUT=10
 ```
 
-Use the Brevo SMTP login and SMTP key from Brevo's SMTP settings, not a Brevo REST API key.
+Use a Brevo API key for `BREVO_API_KEY`. For SMTP fallback, use the Brevo SMTP login and SMTP key from Brevo's SMTP settings, not the API key.
 
 ### Free Captcha Setup
 
@@ -185,7 +194,7 @@ Use this start command:
 gunicorn -c gunicorn.conf.py app.main:app
 ```
 
-Set the same values from `.env` in Render's Environment tab. Render does not read your local `.env` file during deployment.
+Set the same values from `.env` in Render's Environment tab. Render does not read your local `.env` file during deployment. Prefer `BREVO_API_KEY` on Render because SMTP port connections can time out on hosted platforms.
 
 ## Basic Workflow
 

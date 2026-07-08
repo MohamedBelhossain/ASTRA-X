@@ -4,6 +4,7 @@ import secrets
 import socket
 import string
 import time
+from email.utils import parseaddr
 
 import requests
 from flask import (
@@ -55,6 +56,7 @@ TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA"
 TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA"
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_TIMEOUT = int(os.environ.get("TURNSTILE_TIMEOUT", "8"))
+BREVO_TRANSACTIONAL_EMAIL_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def generate_code():
@@ -212,7 +214,7 @@ def _mail_console_fallback_enabled():
 
 
 def _mail_setup_hint():
-    return "Configure Brevo MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER in .env."
+    return "Configure BREVO_API_KEY and MAIL_DEFAULT_SENDER, or Brevo SMTP credentials, in the environment."
 
 
 def _handle_console_code_fallback(flow_name, email, code):
@@ -923,31 +925,53 @@ def logout():
 
 
 def _send_mail(to, subject, body):
+    api_key = (current_app.config.get("BREVO_API_KEY") or "").strip()
     username = (current_app.config.get("MAIL_USERNAME") or "").strip()
     password = (current_app.config.get("MAIL_PASSWORD") or "").strip()
     default_sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or "").strip()
+    timeout = int(current_app.config.get("MAIL_TIMEOUT") or 10)
 
     placeholders = {
         "",
+        "<Brevo API key>",
         "<Brevo SMTP login>",
         "<Brevo SMTP key>",
         "<Verified Brevo sender email>",
     }
+    if default_sender in placeholders:
+        current_app.logger.warning(
+            "Mail sending skipped because MAIL_DEFAULT_SENDER is not configured. "
+            "server=%s port=%s tls=%s brevo_api_configured=%s. %s",
+            current_app.config.get("MAIL_SERVER"),
+            current_app.config.get("MAIL_PORT"),
+            current_app.config.get("MAIL_USE_TLS"),
+            bool(api_key),
+            _mail_setup_hint(),
+        )
+        return False
+
+    if api_key and api_key not in placeholders:
+        return _send_brevo_api_mail(
+            api_key=api_key,
+            to=to,
+            subject=subject,
+            body=body,
+            default_sender=default_sender,
+            timeout=timeout,
+        )
+
     if (
         username in placeholders
         or password in placeholders
-        or default_sender in placeholders
     ):
         current_app.logger.warning(
             "Mail sending skipped because SMTP settings are not configured. "
-            "server=%s port=%s tls=%s username_configured=%s password_configured=%s "
-            "sender_configured=%s. %s",
+            "server=%s port=%s tls=%s username_configured=%s password_configured=%s. %s",
             current_app.config.get("MAIL_SERVER"),
             current_app.config.get("MAIL_PORT"),
             current_app.config.get("MAIL_USE_TLS"),
             bool(username),
             bool(password),
-            bool(default_sender),
             _mail_setup_hint(),
         )
         return False
@@ -966,4 +990,45 @@ def _send_mail(to, subject, body):
         return True
     except Exception as exc:
         current_app.logger.exception("Mail sending failed: %s", exc)
+        return False
+
+
+def _send_brevo_api_mail(api_key, to, subject, body, default_sender, timeout):
+    sender_name, sender_email = parseaddr(default_sender)
+    if not sender_email:
+        sender_email = default_sender
+
+    payload = {
+        "sender": {"email": sender_email},
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": body,
+    }
+    if sender_name:
+        payload["sender"]["name"] = sender_name
+
+    try:
+        current_app.logger.info("Sending mail through Brevo HTTP API.")
+        response = requests.post(
+            BREVO_TRANSACTIONAL_EMAIL_URL,
+            headers={
+                "accept": "application/json",
+                "api-key": api_key,
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=timeout,
+        )
+        if 200 <= response.status_code < 300:
+            current_app.logger.info("Brevo API accepted transactional mail.")
+            return True
+
+        current_app.logger.error(
+            "Brevo API mail failed with status %s: %s",
+            response.status_code,
+            response.text[:500],
+        )
+        return False
+    except Exception as exc:
+        current_app.logger.exception("Brevo API mail failed: %s", exc)
         return False

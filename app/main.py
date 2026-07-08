@@ -106,6 +106,8 @@ app.config.update(
     MAIL_USERNAME=os.environ.get("MAIL_USERNAME", "").strip(),
     MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", "").strip(),
     MAIL_DEFAULT_SENDER=os.environ.get("MAIL_DEFAULT_SENDER", "").strip(),
+    MAIL_TIMEOUT=int(os.environ.get("MAIL_TIMEOUT", "10")),
+    BREVO_API_KEY=os.environ.get("BREVO_API_KEY", "").strip(),
     MAIL_CONSOLE_FALLBACK=os.environ.get("MAIL_CONSOLE_FALLBACK", "false").lower() == "true",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
@@ -116,13 +118,14 @@ app.config.update(
 )
 app.logger.info(
     "Mail config loaded. server=%s port=%s tls=%s username_configured=%s "
-    "password_configured=%s sender_configured=%s console_fallback=%s",
+    "password_configured=%s sender_configured=%s brevo_api_configured=%s console_fallback=%s",
     app.config.get("MAIL_SERVER"),
     app.config.get("MAIL_PORT"),
     app.config.get("MAIL_USE_TLS"),
     bool(app.config.get("MAIL_USERNAME")),
     bool(app.config.get("MAIL_PASSWORD")),
     bool(app.config.get("MAIL_DEFAULT_SENDER")),
+    bool(app.config.get("BREVO_API_KEY")),
     app.config.get("MAIL_CONSOLE_FALLBACK"),
 )
 
