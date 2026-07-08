@@ -963,6 +963,38 @@ def _send_mail(to, subject, body):
         return False
 
     try:
+        api_key = (current_app.config.get("BREVO_API_KEY") or "").strip()
+
+        if api_key:
+            # Render blocks outbound SMTP (port 587/465), so send via
+            # Brevo's HTTP API instead — plain HTTPS on 443, never blocked.
+            current_app.logger.info("Sending mail via Brevo HTTP API.")
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "accept": "application/json",
+                    "api-key": api_key,
+                    "content-type": "application/json",
+                },
+                json={
+                    "sender": {"email": default_sender},
+                    "to": [{"email": to}],
+                    "subject": subject,
+                    "textContent": body,
+                },
+                timeout=current_app.config.get("MAIL_TIMEOUT") or 10,
+            )
+            if resp.status_code >= 300:
+                current_app.logger.error(
+                    "Brevo API mail send failed. status=%s body=%s",
+                    resp.status_code,
+                    resp.text[:500],
+                )
+                return False
+            current_app.logger.info("Mail accepted by Brevo API.")
+            return True
+
+        # Fallback to SMTP if no API key is configured.
         current_app.logger.info(
             "Sending mail through SMTP. server=%s port=%s tls=%s ssl=%s sender_configured=%s",
             current_app.config.get("MAIL_SERVER"),
@@ -972,12 +1004,6 @@ def _send_mail(to, subject, body):
             bool(default_sender),
         )
         msg = Message(subject=subject, recipients=[to], body=body, sender=default_sender)
-
-        # flask-mail (0.10.0) never applies MAIL_TIMEOUT — it calls
-        # smtplib.SMTP(host, port) with no timeout arg, which blocks
-        # forever on a stalled/blocked connect(). Force a timeout at
-        # the socket layer for the duration of this call only, then
-        # restore whatever default was in effect before.
         timeout = current_app.config.get("MAIL_TIMEOUT") or 10
         previous_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(timeout)
@@ -985,7 +1011,6 @@ def _send_mail(to, subject, body):
             mail.send(msg)
         finally:
             socket.setdefaulttimeout(previous_timeout)
-
         current_app.logger.info("SMTP mail accepted by provider.")
         return True
     except Exception as exc:

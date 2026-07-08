@@ -108,6 +108,7 @@ app.config.update(
     MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", "").strip(),
     MAIL_DEFAULT_SENDER=os.environ.get("MAIL_DEFAULT_SENDER", "").strip(),
     MAIL_TIMEOUT=int(os.environ.get("MAIL_TIMEOUT", "10")),
+    BREVO_API_KEY=os.environ.get("BREVO_API_KEY", "").strip(),
     MAIL_CONSOLE_FALLBACK=os.environ.get("MAIL_CONSOLE_FALLBACK", "false").lower() == "true",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
