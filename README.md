@@ -81,7 +81,7 @@ Important options:
 Email delivery prefers Brevo's transactional email HTTPS API:
 
 ```env
-BREVO_API_KEY=<Brevo API key>
+BREVO_API_KEY=<Brevo v3 API key, usually starts with xkeysib->
 MAIL_DEFAULT_SENDER=<Verified Brevo sender email>
 MAIL_TIMEOUT=10
 ```
@@ -98,7 +98,7 @@ MAIL_DEFAULT_SENDER=<Verified Brevo sender email>
 MAIL_TIMEOUT=10
 ```
 
-Use a Brevo API key for `BREVO_API_KEY`. For SMTP fallback, use the Brevo SMTP login and SMTP key from Brevo's SMTP settings, not the API key.
+Use a Brevo v3 API key for `BREVO_API_KEY`, not an SMTP key. SMTP keys usually start with `xsmtpsib-` and belong in `MAIL_PASSWORD` only.
 
 ### Free Captcha Setup
 

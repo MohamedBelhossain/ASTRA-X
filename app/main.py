@@ -103,11 +103,11 @@ app.config.update(
     MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp-relay.brevo.com"),
     MAIL_PORT=int(os.environ.get("MAIL_PORT", 587)),
     MAIL_USE_TLS=os.environ.get("MAIL_USE_TLS", "true").lower() == "true",
+    MAIL_USE_SSL=os.environ.get("MAIL_USE_SSL", "false").lower() == "true",
     MAIL_USERNAME=os.environ.get("MAIL_USERNAME", "").strip(),
     MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", "").strip(),
     MAIL_DEFAULT_SENDER=os.environ.get("MAIL_DEFAULT_SENDER", "").strip(),
     MAIL_TIMEOUT=int(os.environ.get("MAIL_TIMEOUT", "10")),
-    BREVO_API_KEY=os.environ.get("BREVO_API_KEY", "").strip(),
     MAIL_CONSOLE_FALLBACK=os.environ.get("MAIL_CONSOLE_FALLBACK", "false").lower() == "true",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
@@ -117,15 +117,15 @@ app.config.update(
     REMEMBER_COOKIE_SECURE=bool_env(os.environ.get("SESSION_COOKIE_SECURE"), default=False),
 )
 app.logger.info(
-    "Mail config loaded. server=%s port=%s tls=%s username_configured=%s "
-    "password_configured=%s sender_configured=%s brevo_api_configured=%s console_fallback=%s",
+    "Mail config loaded. server=%s port=%s tls=%s ssl=%s username_configured=%s "
+    "password_configured=%s sender_configured=%s console_fallback=%s",
     app.config.get("MAIL_SERVER"),
     app.config.get("MAIL_PORT"),
     app.config.get("MAIL_USE_TLS"),
+    app.config.get("MAIL_USE_SSL"),
     bool(app.config.get("MAIL_USERNAME")),
     bool(app.config.get("MAIL_PASSWORD")),
     bool(app.config.get("MAIL_DEFAULT_SENDER")),
-    bool(app.config.get("BREVO_API_KEY")),
     app.config.get("MAIL_CONSOLE_FALLBACK"),
 )
 

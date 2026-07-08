@@ -13,11 +13,11 @@ def make_app(**config):
         MAIL_SERVER="smtp-relay.brevo.com",
         MAIL_PORT=587,
         MAIL_USE_TLS=True,
+        MAIL_USE_SSL=False,
         MAIL_USERNAME="brevo-smtp-login",
         MAIL_PASSWORD="brevo-smtp-key",
         MAIL_DEFAULT_SENDER="ASTRA-X <verify@example.com>",
         MAIL_TIMEOUT=10,
-        BREVO_API_KEY="",
     )
     app.config.update(config)
     return app
@@ -76,6 +76,7 @@ class MailDeliveryTest(unittest.TestCase):
         self.assertEqual(app.config["MAIL_SERVER"], "smtp-relay.brevo.com")
         self.assertEqual(app.config["MAIL_PORT"], 587)
         self.assertTrue(app.config["MAIL_USE_TLS"])
+        self.assertFalse(app.config["MAIL_USE_SSL"])
 
     def test_brevo_smtp_requires_credentials_and_sender(self):
         app = make_app(
@@ -94,16 +95,12 @@ class MailDeliveryTest(unittest.TestCase):
         self.assertFalse(sent)
         send.assert_not_called()
 
-    def test_brevo_api_uses_https_endpoint_when_key_configured(self):
-        app = make_app(BREVO_API_KEY="brevo-api-key")
-
-        class FakeResponse:
-            status_code = 201
-            text = '{"messageId":"message-id"}'
+    def test_smtp_is_used_even_when_brevo_api_key_is_set(self):
+        app = make_app(BREVO_API_KEY="xsmtpsib-ignored-by-smtp")
 
         with (
             app.app_context(),
-            patch.object(auth_module.requests, "post", return_value=FakeResponse()) as post,
+            patch.object(auth_module.requests, "post") as post,
             patch.object(auth_module.mail, "send") as send,
         ):
             sent = auth_module._send_mail(
@@ -113,40 +110,8 @@ class MailDeliveryTest(unittest.TestCase):
             )
 
         self.assertTrue(sent)
-        send.assert_not_called()
-        post.assert_called_once()
-        url = post.call_args.args[0]
-        kwargs = post.call_args.kwargs
-        self.assertEqual(url, "https://api.brevo.com/v3/smtp/email")
-        self.assertEqual(kwargs["headers"]["api-key"], "brevo-api-key")
-        self.assertEqual(kwargs["timeout"], 10)
-        self.assertEqual(
-            kwargs["json"],
-            {
-                "sender": {"email": "verify@example.com", "name": "ASTRA-X"},
-                "to": [{"email": "user@example.com"}],
-                "subject": "ASTRA-X - Verify your email",
-                "textContent": "Your verification code is: 123456",
-            },
-        )
-
-    def test_brevo_api_failure_returns_false(self):
-        app = make_app(BREVO_API_KEY="brevo-api-key")
-
-        class FakeResponse:
-            status_code = 401
-            text = '{"message":"unauthorized"}'
-
-        with app.app_context(), patch.object(
-            auth_module.requests, "post", return_value=FakeResponse()
-        ):
-            sent = auth_module._send_mail(
-                "user@example.com",
-                "ASTRA-X - Verify your email",
-                "Your verification code is: 123456",
-            )
-
-        self.assertFalse(sent)
+        post.assert_not_called()
+        send.assert_called_once()
 
 
 if __name__ == "__main__":
