@@ -972,7 +972,20 @@ def _send_mail(to, subject, body):
             bool(default_sender),
         )
         msg = Message(subject=subject, recipients=[to], body=body, sender=default_sender)
-        mail.send(msg)
+
+        # flask-mail (0.10.0) never applies MAIL_TIMEOUT — it calls
+        # smtplib.SMTP(host, port) with no timeout arg, which blocks
+        # forever on a stalled/blocked connect(). Force a timeout at
+        # the socket layer for the duration of this call only, then
+        # restore whatever default was in effect before.
+        timeout = current_app.config.get("MAIL_TIMEOUT") or 10
+        previous_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(timeout)
+        try:
+            mail.send(msg)
+        finally:
+            socket.setdefaulttimeout(previous_timeout)
+
         current_app.logger.info("SMTP mail accepted by provider.")
         return True
     except Exception as exc:
