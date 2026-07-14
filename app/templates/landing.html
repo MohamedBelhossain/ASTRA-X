@@ -447,7 +447,7 @@
 
         <div class="eyebrow">// Automated Security Analysis</div>
         <h1 class="headline">Find weaknesses<br>before <em>attackers do.</em></h1>
-        <p class="body-text">ASTRA-X is an automated web vulnerability scanner that probes authorized targets for security flaws — from open ports and misconfigured services to injection vulnerabilities and exposed sensitive files. Point it at a URL, hit scan, and get a detailed breakdown of every risk found.</p>
+        <p class="body-text">ASTRA-X is an automated web vulnerability scanner that probes authorized targets for security flaws — from CMS fingerprints and missing security headers to open ports, injection vulnerabilities, authentication weaknesses, exposed files, and subdomains. Point it at a URL, hit scan, and get a detailed breakdown of every risk found.</p>
 
         <div class="connect-block">
           <div class="connect-label">// Get Started</div>
@@ -478,6 +478,20 @@
 
         <div class="feat-card">
           <div class="feat-header">
+            <span class="feat-pill">CMS / CVE Intelligence</span>
+          </div>
+          <p>Fingerprints common CMS platforms, records exposed versions, and checks for candidate CVE records tied to the detected stack.</p>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-header">
+            <span class="feat-pill">Security Headers &amp; Cookies</span>
+          </div>
+          <p>Reviews browser security headers and cookie flags such as HttpOnly, Secure, and SameSite to catch configuration gaps.</p>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-header">
             <span class="feat-pill">Port &amp; Service Scan</span>
           </div>
           <p>Identifies open ports and exposed network services on the target host that could serve as entry points for attackers.</p>
@@ -492,9 +506,9 @@
 
         <div class="feat-card">
           <div class="feat-header">
-            <span class="feat-pill">Exposed Files &amp; Paths</span>
+            <span class="feat-pill">Brute Force · Exposed Files</span>
           </div>
-          <p>Crawls the target to surface sensitive files, admin panels, backup directories, and misconfigured endpoints left publicly accessible.</p>
+          <p>Checks login forms for weak credential exposure and crawls for sensitive files, admin panels, backup directories, and public misconfigurations.</p>
         </div>
 
         <div class="feat-card">

@@ -226,6 +226,8 @@ th {
 td {
   background: #fff;
   color: #111;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .port-status-open {
@@ -245,7 +247,8 @@ td {
   border-radius: 10px;
   overflow: hidden;
   background: #fafafa;
-  break-inside: avoid;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
 .vuln-critical { border-left: 4px solid #d32f2f; }
@@ -262,6 +265,8 @@ td {
   padding: 10px 14px;
   border-bottom: 1px solid #ddd;
   background: #f2f2f2;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
 .severity-badge {
@@ -295,10 +300,11 @@ td {
 .detail-val {
   color: #111;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .vuln-code {
-  display: inline-block;
+  display: inline;
   padding: 2px 6px;
   border: 1px solid #d6d6d6;
   border-radius: 4px;
@@ -306,6 +312,10 @@ td {
   color: #0f7f45;
   font-family: "Courier New", monospace;
   font-size: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .no-vulns,
@@ -322,7 +332,7 @@ td {
 }
 
 .vuln-details-panel {
-  display: block;
+  display: none;
   margin-top: 8px;
   padding: 12px 14px;
   border-top: 1px solid #ddd;
@@ -393,6 +403,7 @@ td {
 .evidence-code {
   color: #111;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .evidence-code {

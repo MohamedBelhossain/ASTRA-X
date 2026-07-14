@@ -617,7 +617,7 @@
                 <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode or vuln.proof_assistant %}
+              {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
                 {{ proof_panel(vuln.proof_assistant) }}
               </div>
@@ -654,7 +654,7 @@
                 <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode or vuln.proof_assistant %}
+              {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
                 {{ proof_panel(vuln.proof_assistant) }}
               </div>
@@ -691,7 +691,7 @@
                 <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode or vuln.proof_assistant %}
+              {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
                 {{ proof_panel(vuln.proof_assistant) }}
               </div>
@@ -793,7 +793,7 @@
                 <button class="detail-toggle" type="button" data-target="{{ vid }}">▶ View evidence</button>
                 {% endif %}
               </div>
-              {% if not pdf_mode or f.proof_assistant %}
+              {% if not pdf_mode %}
               <div class="vuln-details-panel" id="{{ vid }}">
                 {{ proof_panel(f.proof_assistant) }}
               </div>

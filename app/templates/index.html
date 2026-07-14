@@ -352,6 +352,54 @@
       line-height: 1.55;
     }
 
+    .coverage-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .coverage-group {
+      border: 1px solid #242424;
+      border-radius: 10px;
+      background: rgba(255,255,255,.02);
+      padding: 10px 11px;
+      min-width: 0;
+    }
+    .coverage-title {
+      display: block;
+      color: #686868;
+      font-size: .62rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .coverage-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .coverage-list span {
+      border: 1px solid #2b2b2b;
+      border-radius: 6px;
+      background: #111;
+      color: #aaa;
+      font-size: .68rem;
+      line-height: 1.2;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+    .coverage-group.core .coverage-list span {
+      border-color: rgba(0,188,212,.22);
+      color: #8bdce7;
+    }
+    .coverage-group.deep .coverage-list span {
+      border-color: rgba(255,140,0,.24);
+      color: #d9a66a;
+    }
+    @media (max-width: 720px) {
+      .coverage-grid { grid-template-columns: 1fr; }
+    }
+
     .mode-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -440,7 +488,7 @@
             <div class="logo"></div>
             <div>
               <h1>ASTRA-X</h1>
-              <div class="subtitle">Ports · SQLi · XSS · LFI · Brute Force · Files · Subdomains</div>
+              <div class="subtitle">CMS · Headers · Ports · SQLi · XSS · LFI · Brute Force · Files · Subdomains</div>
             </div>
           </div>
           <form id="scan-form" class="form-stack">
@@ -460,15 +508,40 @@
                   <input id="mode-fast" type="radio" name="scan_mode" value="fast">
                   <label class="mode-card" for="mode-fast">
                     <span class="mode-title">Fast Scan <span class="mode-badge">Quick</span></span>
-                    <span class="mode-copy">Runs the quickest core checks: port scan, crawl, SQLi, and XSS.</span>
+                    <span class="mode-copy">Runs core checks: CMS fingerprinting, security headers, port scan, crawl, SQLi, and XSS.</span>
                   </label>
                 </div>
                 <div class="mode-option">
                   <input id="mode-deep" type="radio" name="scan_mode" value="deep" checked>
                   <label class="mode-card" for="mode-deep">
                     <span class="mode-title">Deep Scan <span class="mode-badge">Full</span></span>
-                    <span class="mode-copy">Runs all features including LFI, brute-force, file exposure, and subdomain checks.</span>
+                    <span class="mode-copy">Adds LFI, brute-force, file exposure, and subdomain checks on top of the core CMS, headers, ports, crawl, SQLi, and XSS checks.</span>
                   </label>
+                </div>
+              </div>
+            </div>
+            <div class="field-row coverage-row">
+              <label>Scan Coverage</label>
+              <div class="coverage-grid">
+                <div class="coverage-group core">
+                  <span class="coverage-title">Every Scan</span>
+                  <div class="coverage-list">
+                    <span>CMS / CVE</span>
+                    <span>Security Headers</span>
+                    <span>Port Scan</span>
+                    <span>Crawl</span>
+                    <span>SQLi</span>
+                    <span>XSS</span>
+                  </div>
+                </div>
+                <div class="coverage-group deep">
+                  <span class="coverage-title">Deep Scan Adds</span>
+                  <div class="coverage-list">
+                    <span>LFI / Traversal</span>
+                    <span>Brute Force</span>
+                    <span>File Exposure</span>
+                    <span>Subdomains</span>
+                  </div>
                 </div>
               </div>
             </div>
